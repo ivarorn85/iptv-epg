@@ -13,15 +13,15 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import {
   CHANNEL,
   DISPLAY_NAME,
-  HOUR_MS,
   PROGRAMME,
   attr,
   escapeAttr,
   isPlaceholder,
   mb,
-  xmltvChannel,
-  xmltvProgramme,
 } from "./epg-xml.mjs";
+import { eventGuide } from "./events.mjs";
+import { ruvGuide, synGuide } from "./iceland.mjs";
+import { baseKey, bodyOf, ccOf, idKey, nameKey, scopedBaseKey, scopedKey } from "./keys.mjs";
 
 const EPGSHARE = "https://epgshare01.online/epgshare01/epg_ripper_";
 const IPTVEPG = "https://iptv-epg.org/files/epg-";
@@ -33,10 +33,9 @@ const IPTVEPG = "https://iptv-epg.org/files/epg-";
 const SOURCES = [
   // The broadcasters' own APIs come first: first-party beats any aggregator for
   // the channels they own, and between them they are the only source anywhere
-  // for Sýn+, the Sýn Sport Ísland channels and Sýn Sport 5. Called through a
-  // wrapper because the builders are declared further down the file.
-  { label: "RÚV", build: () => ruvGuide() },
-  { label: "Sýn", build: () => synGuide() },
+  // for Sýn+, the Sýn Sport Ísland channels and Sýn Sport 5.
+  { label: "RÚV", build: ruvGuide },
+  { label: "Sýn", build: synGuide },
   // Ids already in my provider's vocabulary ("AnimalPlanet.is"), and it runs
   // first because it carries a full week of RUV and RUV 2 where guide3 has one
   // day. It has nothing for Sýn, Sýn Sport, Sjónvarp Símans or KVF, so guide3
@@ -68,72 +67,6 @@ const SOURCES = [
 const OUT = "guide.xml.gz";
 const COUNTS = "counts.json";
 
-// The ordinal in epgshare's split-country files (".us2") names the file, not
-// the country, so it is not part of either half.
-const ID_SUFFIX = /^(.*)\.([a-z]{2})\d?$/;
-
-const splitId = (id) => {
-  const m = ID_SUFFIX.exec(id);
-  return m ? { body: m[1], cc: m[2] } : { body: id, cc: "" };
-};
-
-// "BBC.Four.HD.uk" and "BBC Four HD.uk" both collapse to "bbcfourhd|uk"
-const idKey = (id) => {
-  const { body, cc } = splitId(id);
-  return `${body.replace(/[.\s_-]/g, "").toLowerCase()}|${cc}`;
-};
-
-const ccOf = (id) => splitId(id).cc;
-const bodyOf = (id) => splitId(id).body;
-
-// "IS: RUV FHD" -> "isruvfhd". "+" becomes a word rather than vanishing,
-// because it is the only thing that tells "TV3+" from "TV3".
-const nameKey = (name) =>
-  name.replace(/\+/g, "plus").replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
-
-// Feed variants stack up in my provider's names and have to come off together:
-// "Sky Sport Main Event UHD 4K B", "TNT Sports 1 FHD P50", "BBC One HDR 4K".
-// One token list builds both patterns, because when it was written twice the
-// two drifted and "1080p B" stopped collapsing.
-const VARIANTS = "fhd|uhd|hd|sd|4k|hdr|p50|2160p|1080p";
-const VARIANT = new RegExp(`(${VARIANTS})$`);
-const BACKUP_FEED = new RegExp(`(${VARIANTS})[ab]$`);
-
-// "IS: RUV 2 HD" -> "isruv2", so it also matches "IS: RUV 2" and "IS: RUV 2 FHD".
-// My provider also writes "Sky Sport" where epgshare writes "Sky Sports", so
-// that folds here and not in the strict key above.
-const baseKey = (name) => {
-  let key = nameKey(name).replace(/sports/g, "sport");
-  if (BACKUP_FEED.test(key)) key = key.slice(0, -1);
-  for (;;) {
-    const shorter = key.replace(VARIANT, "");
-    if (shorter === key || !shorter) return key;
-    key = shorter;
-  }
-};
-
-// The two sides label the same channel differently and neither is wrong: my
-// provider prefixes the country ("US: TBS HD"), epgshare prefixes a headend
-// code ("[MTVSWHD] MTV HD") and suffixes a feed annotation ("DR1 Denmark
-// (DK,DA)", "AandE Network (East)", "SVT1 HD (T)").
-const bare = (text) =>
-  text
-    .replace(/^[A-Za-z0-9]{2,4}\s*:\s*/, "")
-    .replace(/\[[^\]]*\]/g, "")
-    .replace(/\([^)]*\)/g, "");
-
-// Country is part of the key, so a UK channel can never claim the US entry of
-// the same name. No country means no usable key at all — returning "" here
-// keeps unlookupable entries out of the maps in the first place.
-const scopedKey = (cc, text) => {
-  const key = nameKey(bare(text));
-  return cc && key ? `${cc}|${key}` : "";
-};
-const scopedBaseKey = (cc, text) => {
-  const key = baseKey(bare(text));
-  return cc && key ? `${cc}|${key}` : "";
-};
-
 // The largest string V8 will hold. Some of these files are close enough to it
 // that saying so beats an ERR_STRING_TOO_LONG stack trace in the log.
 const MAX_STRING = 0x1fffffe8;
@@ -146,131 +79,6 @@ const fetchSource = async ({ url, build }) => {
   const raw = url.endsWith(".gz") ? gunzipSync(buf) : buf;
   if (raw.length > MAX_STRING) throw new Error(`${mb(raw.length, 0)} uncompressed, too big to parse`);
   return raw.toString("utf8");
-};
-
-// Both Icelandic broadcasters publish their own schedule as JSON, which beats
-// any third-party guide for their own channels: syn.is is the only source
-// anywhere for Sýn+ and the Sýn Sport Ísland channels, and ruv.is gives real
-// end times instead of ones inferred from the next programme.
-//
-// These build XMLTV text and then go through the same matching as every fetched
-// source, so nothing here needs to know a single provider id.
-
-const SYN_API = "https://www.syn.is/api/epg";
-
-// The JSON gives a start and no end. A continuous schedule can take the next
-// programme's start, but these are sports channels with days between events, so
-// cap it rather than claim a match runs for a week.
-const MAX_PROGRAMME_HOURS = 3;
-
-const synGuide = async () => {
-  const stations = await (await fetch(SYN_API)).json();
-  const channels = [];
-  const programmes = [];
-
-  for (const station of stations) {
-    let events;
-    try {
-      events = await (await fetch(`${SYN_API}/${station}`)).json();
-    } catch {
-      continue; // one station being down is not the whole source failing
-    }
-    if (!events?.length) continue; // carried, but nothing scheduled right now
-
-    // Sorted so the next programme's start can close the previous one, and
-    // deduplicated because the feed occasionally lists two at the same minute —
-    // which would otherwise produce a zero-length entry and an overlap.
-    events.sort((a, b) => a.upphaf.localeCompare(b.upphaf));
-    events = events.filter((event, at) => at === 0 || event.upphaf !== events[at - 1].upphaf);
-    // Match on "<station>.is" and on both of the names it goes by: the id
-    // reaches "Synsport 5.is", the station code reaches rows like "IS: SYN+ HD"
-    // that carry no id and whose accent-free name only the code matches.
-    const id = `${station}.is`;
-    channels.push(xmltvChannel(id, [events[0].midill_heiti, station]));
-
-    for (const [at, event] of events.entries()) {
-      const start = new Date(event.upphaf);
-      const next = events[at + 1] ? new Date(events[at + 1].upphaf) : null;
-      const capped = new Date(start.getTime() + MAX_PROGRAMME_HOURS * HOUR_MS);
-      programmes.push(
-        xmltvProgramme({
-          channel: id,
-          start,
-          stop: next && next < capped ? next : capped,
-          title: event.isltitill || event.titill,
-          desc: event.lysing,
-          categories: (event.flokkur ?? "").split(",").map((c) => c.trim()),
-          lang: "is",
-        })
-      );
-    }
-  }
-  return `<tv>\n${channels.join("\n")}\n${programmes.join("\n")}\n</tv>\n`;
-};
-
-const RUV_GQL = "https://www.ruv.is/gql/";
-const RUV_CHANNELS = { ruv: "RÚV", ruv2: "RÚV 2" };
-const RUV_DAYS = 10;
-
-// Written out rather than sent as a persisted-query hash: the hash belongs to
-// whatever build of their site was current, and would break the day they deploy.
-const RUV_QUERY = `query getSchedule($channel: Channels!, $date: String!) {
-  Schedule(channel: $channel, date: $date) {
-    events { title original_title description start_time end_time_friendly }
-  }
-}`;
-
-const ruvGuide = async () => {
-  const channels = [];
-  const programmes = [];
-  const today = new Date();
-
-  for (const [channel, name] of Object.entries(RUV_CHANNELS)) {
-    const id = `${channel}.is`;
-    const seenStart = new Set();
-    channels.push(xmltvChannel(id, [name, channel]));
-
-    for (let day = 0; day < RUV_DAYS; day++) {
-      const date = new Date(today.getTime() + day * 24 * HOUR_MS).toISOString().slice(0, 10);
-      let events;
-      try {
-        const res = await fetch(RUV_GQL, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ query: RUV_QUERY, variables: { channel, date } }),
-        });
-        events = (await res.json())?.data?.Schedule?.events;
-      } catch {
-        continue;
-      }
-
-      for (const event of events ?? []) {
-        // start_time carries no offset because Iceland has none. end_time is
-        // wall clock only, and belongs to the day the programme *starts* — a
-        // day's response also carries that night's post-midnight tail, so the
-        // requested date is the wrong one to date it from.
-        const start = new Date(`${event.start_time}Z`);
-        const stop = new Date(`${event.start_time.slice(0, 10)}T${event.end_time_friendly}:00Z`);
-        if (stop < start) stop.setUTCDate(stop.getUTCDate() + 1); // runs past midnight
-        // "Dagskrárlok" — end of broadcasting — is a zero-length marker, not a
-        // programme, and an empty span is invalid XMLTV.
-        if (stop <= start) continue;
-        if (seenStart.has(event.start_time)) continue; // belt and braces across day requests
-        seenStart.add(event.start_time);
-        programmes.push(
-          xmltvProgramme({
-            channel: id,
-            start,
-            stop,
-            title: event.title || event.original_title,
-            desc: event.description,
-            lang: "is",
-          })
-        );
-      }
-    }
-  }
-  return `<tv>\n${channels.join("\n")}\n${programmes.join("\n")}\n</tv>\n`;
 };
 
 const loadChannels = async () => {
@@ -290,7 +98,9 @@ const loadChannels = async () => {
 };
 
 // My provider states the country in the channel name; fall back to the id for
-// the rows that don't carry a prefix.
+// the rows that don't carry a prefix. Only two-letter prefixes are countries,
+// while `bare` in keys.mjs strips two to four characters — "CAR:" is a label,
+// not a country, so it comes off the name without ever becoming a scope.
 const providerCc = (ch) => {
   const prefix = /^([A-Za-z]{2})\s*:/.exec(ch.name ?? "");
   return prefix ? prefix[1].toLowerCase() : ccOf(ch.epg_channel_id ?? "");
@@ -398,7 +208,9 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
     for (const t of targets) claimed.add(t);
   };
 
-  // Pass 1: exact ids and names.
+  // Pass 1: exact ids and names. The ?? chain stops at the first lookup that
+  // returns anything, even if take() then finds every target already claimed —
+  // an exact id hit that lost the race is not a reason to go looking by name.
   for (const { sourceId, names } of elements) {
     take(
       sourceId,
@@ -498,105 +310,6 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
   return { channels, programmes };
 };
 
-// Pass 5: my provider names its per-event channels after the event itself —
-// "[Livey] (9/9) 16:35 Aalborg Handbold - Paris Saint-Germain" — and gives them
-// no id. No guide will ever carry those, but the name already IS the schedule,
-// so read it back out. This is the only place the output contains programmes no
-// source published; they are the provider's own strings, reshaped. The end time
-// is the one thing the name does not give, hence a fixed block.
-const EVENT_NAME = /^\[(?:[^\]]+)\]\s*\((\d{1,2})\/(\d{1,2})\)\s*(\d{1,2}):(\d{2})\s+(\S.*)$/;
-const EVENT_HOURS = 3;
-// How far ahead to ask Viaplay for real end times.
-const EVENT_DAYS = 8;
-
-// A day/month with no year means the one that puts it nearest today.
-const eventStart = (day, month, hour, minute) => {
-  const now = Date.now();
-  const thisYear = new Date(now).getUTCFullYear();
-  const nearest = [-1, 0, 1]
-    .map((shift) => Date.UTC(thisYear + shift, month - 1, day, hour, minute))
-    .reduce((best, at) => (Math.abs(at - now) < Math.abs(best - now) ? at : best));
-  return new Date(nearest);
-};
-
-
-// Viaplay is pure streaming, so its API has no channel field and cannot be a
-// source of its own. What it does have is the real end time of every fixture,
-// which is worth borrowing: a "[Viaplay IS]" channel name gives a start and
-// nothing else, and a baseball game that actually runs 330 minutes should not
-// be published as a flat three-hour block.
-const VIAPLAY_SPORT = "https://content.viaplay.is/pcdash-is/sport";
-
-const viaplayEnds = async (days) => {
-  const ends = new Map();
-  const collect = (blocks) => {
-    for (const block of blocks)
-      for (const product of block._embedded?.["viaplay:products"] ?? []) {
-        const { start, end } = product.epg ?? {};
-        const title = product.content?.title;
-        if (start && end && title) ends.set(`${nameKey(title)}|${start.slice(0, 16)}`, new Date(end));
-      }
-  };
-
-  for (let day = 0; day < days; day++) {
-    const date = new Date(Date.now() + day * 24 * HOUR_MS).toISOString().slice(0, 10);
-    try {
-      const page = await (await fetch(`${VIAPLAY_SPORT}?date=${date}`)).json();
-      const blocks = page._embedded?.["viaplay:blocks"] ?? [];
-      collect(blocks);
-
-      // Only the schedule block is paginated, and it is found by title so a
-      // reshuffle of their page does not silently drop the rest of the day.
-      const schedule = blocks.find((block) => /dagskr/i.test(block.title ?? ""));
-      const href = schedule?._links?.self?.href;
-      for (let page2 = 2; href && page2 <= (schedule.pageCount ?? 1); page2++) {
-        const more = await (await fetch(href.replace(/pageNumber=\d+/, `pageNumber=${page2}`))).json();
-        collect(more._embedded?.["viaplay:blocks"] ?? [more]);
-      }
-    } catch {
-      // Viaplay being unreachable just means the fixed block stands.
-    }
-  }
-  return ends;
-};
-
-const eventGuide = async (providerChannels) => {
-  const realEnds = await viaplayEnds(EVENT_DAYS);
-  const channels = [];
-  const programmes = [];
-  // The playlist repeats some fixtures verbatim, and nameKey drops punctuation
-  // so two near-identical names can land on one id. Deduplicating on the id
-  // rather than the name covers both: otherwise the second row emits no channel
-  // but still emits a programme, and the first channel lists it twice.
-  const taken = new Set();
-
-  for (const ch of providerChannels) {
-    if (ch.epg_channel_id) continue; // a real id means a real source can serve it
-    const match = EVENT_NAME.exec(ch.name ?? "");
-    if (!match) continue;
-
-    const id = `event.${nameKey(ch.name)}`;
-    if (taken.has(id)) continue;
-    taken.add(id);
-
-    const [, day, month, hour, minute, event] = match;
-    const start = eventStart(+day, +month, +hour, +minute);
-    const title = event.trim();
-    // Viaplay's real end time when it has one, otherwise the fixed block.
-    const stop =
-      realEnds.get(`${nameKey(title)}|${start.toISOString().slice(0, 16)}`) ??
-      new Date(start.getTime() + EVENT_HOURS * HOUR_MS);
-    if (stop.getTime() < Date.now()) continue; // a fixture the playlist never cleared out
-
-    channels.push({ id, element: xmltvChannel(id, [ch.name]) });
-    programmes.push({
-      channel: id,
-      element: xmltvProgramme({ channel: id, start, stop, title }),
-    });
-  }
-  return { channels, programmes };
-};
-
 const channels = await loadChannels();
 const index = buildIndex(channels);
 console.log(`provider: ${channels.length} channels, ${index.byId.size} distinct id keys\n`);
@@ -632,7 +345,16 @@ for (const source of SOURCES) {
   }
 }
 
-merge("Events", await eventGuide(channels));
+// Pass 5, and the one producer that does not go through convert(): its
+// channels are matched by name, so there is no provider id to rewrite. Guarded
+// like the sources are, so a bad row here cannot cost the whole guide.
+try {
+  const events = await eventGuide(channels);
+  merge("Events", events);
+  console.log(`  of those, ${events.borrowed} carry a real end time from Viaplay`);
+} catch (err) {
+  console.error(`Events: skipped (${err.message})`);
+}
 
 const xml =
   '<?xml version="1.0" encoding="UTF-8"?>\n' +

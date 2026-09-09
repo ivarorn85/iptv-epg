@@ -27,11 +27,15 @@ TiviMate succeeds on step one and never has to guess.
    token — and push:
 
    ```
-   build-epg.mjs        the builder
+   build-epg.mjs        source list, matching passes, merge, main
+   iceland.mjs          the two Icelandic broadcasters' JSON APIs
+   events.mjs           per-event channels read out of their own names
+   keys.mjs             how a channel on one side is matched to the other
+   epg-xml.mjs          shared XMLTV shapes and emitters
    check-guide.mjs      the publish gate
-   epg-xml.mjs          shared XMLTV helpers
    README.md
    .gitignore
+   .gitattributes       keeps the guide binary and the sources LF
    .github/workflows/build-epg.yml
    ```
 
@@ -189,7 +193,10 @@ provider sometimes has two ids for one channel — `TNT Sports 3.uk` alongside
 | epgshare01 per country          | UK, US, US sports, DK, NO, SE | Ready-made, updated daily                            |
 | iptv-epg.org `epg-gb`, `epg-us` | UK and US gap-fillers         | Cover channels epgshare has no entry for at all      |
 
-The first source to claim a channel wins, so the order is the design.
+The first source to claim a channel wins, so the order is the design. The table
+above groups the six epgshare files into one row for brevity; in `SOURCES` they
+are interleaved, each gap-filler sitting directly after the epgshare file for its
+country. `SOURCES` is the authority on order.
 
 **The broadcasters' own APIs go first.** `syn.is/api/epg` lists its stations and
 serves each one's schedule as JSON; `ruv.is/gql` answers a GraphQL query per
@@ -223,8 +230,12 @@ Worth knowing before editing the list:
   channels here. Do not substitute it.
 - Stöð 2 no longer exists. It was retired in June 2025 and replaced by Sýn, so
   `IS: Sýn FHD` is that channel and guide3 already covers it.
+- There is no `US1` on epgshare01 — the US files are `US2`, `US_SPORTS1` and
+  `US_LOCALS1`, which is why `SOURCES` looks like it skipped one.
 - To add a country, add a line to `SOURCES`. Verified epgshare filenames include
-  `DE1` `ES1` `IT1` `FR1` `NL1` `PL1` `PT1`.
+  `DE1` `ES1` `IT1` `FR1` `NL1` `PL1` `PT1`. Germany, Spain and Italy are
+  already there, commented out deliberately — see *Measured and rejected*, they
+  are a trap rather than a to-do list.
 
 ## What a good run looks like
 
@@ -243,12 +254,20 @@ changed its ids or its naming.
 | US sports     | 30       | NHL team feeds, all matched by name              |
 | US extra      | 64       | A&E, CBS, HGTV, Food Network, beIN Sports 4-8    |
 | Denmark       | 59       |                                                  |
-| Norway        | 4        | epgshare's `.no` ids embed the country as a word |
+| Norway        | 4        | see the note below                               |
 | Sweden        | 81       |                                                  |
 | Events        | ~850     | read out of channel names, not fetched           |
 
 About 1,500 channels and 78,000 programmes: 7.6 MB gzipped, 62 MB raw, which is
-comfortably under the size that chokes TiviMate.
+comfortably under the size that chokes TiviMate. `Events` moves between runs by
+design — it is read from the playlist's current fixtures, and finished ones are
+dropped, so a swing of a hundred either way is normal and not a regression.
+
+Norway stays low because epgshare's Norwegian entries carry the country in the
+*name* — `Animal Planet Norway (NO,NO)` — and while the annotation in brackets
+is stripped, the trailing word is not, so it never meets my provider's
+`NO: Animal Planet`. Denmark avoids this only because its provider names match
+cleanly on their own.
 
 That reaches **3,898 of the 8,806** playlist rows that carry an
 `epg_channel_id`, plus roughly a thousand more that carry none and are picked up
@@ -261,8 +280,8 @@ and the 24/7 loops. That is not a matching failure, and no source will fix it.
 
 The guide is uploaded as the asset of a fixed release tag, `epg`, and is not
 committed. The tag never moves, so the download URL is permanent, and the
-repository stays small instead of gaining 4 MB a day — committing it daily would
-have passed a gigabyte inside a year.
+repository stays small instead of gaining 8 MB a day — committing it daily would
+have passed two gigabytes inside a year.
 
 `status.json` is the one thing committed each run: a few hundred bytes recording
 what was published and how many channels each source contributed. It doubles as
@@ -309,7 +328,13 @@ node build-epg.mjs
 node check-guide.mjs
 ```
 
-Node 22, no dependencies.
+The build writes `guide.xml.gz` and `counts.json`, both gitignored; `counts.json`
+is how the builder hands its per-source numbers to the gate. The gate only
+rewrites the committed `status.json` when asked with `--record`, which is what CI
+does — so running it by hand cannot clobber the baseline the per-source check
+compares against.
+
+No dependencies. Needs Node 18 or newer; CI runs 22.
 
 ## Measured and rejected
 

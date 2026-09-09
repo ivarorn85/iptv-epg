@@ -4,7 +4,7 @@
 export const CHANNEL = /<channel\b[^>]*?>[\s\S]*?<\/channel>|<channel\b[^>]*?\/>/g;
 export const PROGRAMME = /<programme\b[^>]*?>[\s\S]*?<\/programme>|<programme\b[^>]*?\/>/g;
 export const DISPLAY_NAME = /<display-name[^>]*>([\s\S]*?)<\/display-name>/g;
-export const TITLE = /<title[^>]*>([\s\S]*?)<\/title>/;
+const TITLE = /<title[^>]*>([\s\S]*?)<\/title>/;
 
 // Built once per attribute name and reused: attr() runs on every programme of
 // every source, and compiling the pattern per call was the hottest waste here.
@@ -24,7 +24,7 @@ export const mb = (bytes, digits = 1) => `${(bytes / 1048576).toFixed(digits)} M
 
 // Iceland is UTC+0 all year, and every source here publishes in it, so the
 // offset is a constant rather than something to carry around.
-export const xmltvTime = (date) => `${date.toISOString().replace(/\D/g, "").slice(0, 14)} +0000`;
+const xmltvTime = (date) => `${date.toISOString().replace(/\D/g, "").slice(0, 14)} +0000`;
 
 // Emitters for the sources that publish JSON rather than XMLTV. Element order
 // follows the DTD — title, desc, then category — because some readers care.
@@ -48,13 +48,13 @@ export const xmltvProgramme = ({ channel, start, stop, title, desc, categories =
   );
 };
 
-export const HOUR_MS = 3_600_000;
 
 // iptv-epg.org fills channels it has no schedule for with hourly filler, and
 // its sports feeds with "No EVENT Today". Left alone that is worse than an
 // empty channel: the filler claims the id, so no other source can serve it and
 // my provider's own EPG never shows through either.
-const PLACEHOLDER = /^(no data|no event today|no information|no programme|tba|to be announced|n\/a|-)$/i;
+const PLACEHOLDER =
+  /^(no data|no event today|no information|no programme|tba|to be announced|n\/a|-|dagskrárlok)$/i;
 
 export const isPlaceholder = (element) =>
   PLACEHOLDER.test((TITLE.exec(element) ?? [])[1]?.trim() ?? "");

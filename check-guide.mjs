@@ -9,7 +9,14 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 
-import { HOUR_MS, PROGRAMME, attr, mb } from "./epg-xml.mjs";
+import { PROGRAMME, attr, mb } from "./epg-xml.mjs";
+
+const HOUR_MS = 3_600_000;
+
+// Writing status.json is how the next run gets its baseline, so it happens only
+// when CI asks for it. Otherwise running this by hand would overwrite the
+// committed baseline with whatever an ad-hoc build produced.
+const record = process.argv.includes("--record");
 
 const MIN_CHANNELS = 300;
 const MIN_PROGRAMMES = 20_000;
@@ -93,6 +100,11 @@ if (failures.length) {
   for (const failure of failures) console.error(`  - ${failure}`);
   console.error(`\nthe previous release is left in place, so the grid keeps working`);
   process.exit(1);
+}
+
+if (!record) {
+  console.log(`\nok to publish (status.json left alone — pass --record to update the baseline)`);
+  process.exit(0);
 }
 
 writeFileSync(

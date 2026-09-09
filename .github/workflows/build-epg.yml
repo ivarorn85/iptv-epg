@@ -16,6 +16,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # The build makes ~90 requests across a dozen upstreams, none of which owe
+    # us a timely answer. Without this a single hung host would sit on the
+    # runner's 6-hour default before the failure mail ever arrives.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -34,11 +38,12 @@ jobs:
 
       # Refuses a guide that would empty the grid. The job stops here, the last
       # good release stays up, and the failure mail is the signal to look.
+      # --record updates status.json, which is the next run's baseline.
       - name: Check the guide is publishable
-        run: node check-guide.mjs
+        run: node check-guide.mjs --record
 
       # Served from a release rather than from git, so the repository does not
-      # grow by 4 MB a day. The tag is fixed, so the download URL never changes.
+      # grow by 8 MB a day. The tag is fixed, so the download URL never changes.
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -48,13 +53,19 @@ jobs:
               --notes "Rolling XMLTV guide. The asset is replaced daily; this release is the stable download URL."
           gh release upload epg guide.xml.gz --clobber
 
-      # A few hundred bytes a day. Records what was published, and keeps the
-      # repository active so GitHub does not disable the schedule for inactivity.
+      # A few hundred bytes a day. Records what was published and how many
+      # channels each source contributed, and keeps the repository active so
+      # GitHub does not disable the schedule for inactivity. Rebases first
+      # because the guide is already live by this point: a push that races a
+      # human commit should not turn a good run red.
       - name: Record the run
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add status.json
-          git diff --quiet --cached && echo "no change" && exit 0
-          git commit -m "EPG $(date -u +%Y-%m-%d)"
-          git push
+          # Guarded rather than unconditional: status.json carries a timestamp
+          # so it always differs, but a bare commit would fail the step if that
+          # ever stops being true.
+          git diff --quiet --cached || git commit -m "EPG $(date -u +%Y-%m-%d)"
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
