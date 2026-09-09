@@ -73,7 +73,11 @@ else if (hoursAhead < MIN_HOURS_AHEAD)
 const counts = readJson(COUNTS) ?? {};
 const previous = readJson(STATUS)?.sources ?? {};
 for (const [label, before] of Object.entries(previous)) {
-  const now = counts[label] ?? 0;
+  // A label the build no longer reports at all was removed from SOURCES on
+  // purpose. Failing on that would deadlock: the publish stops, so status.json
+  // never updates, so it fails again forever.
+  if (!(label in counts)) continue;
+  const now = counts[label];
   if (before >= HEALTHY_SOURCE && now === 0)
     failures.push(`source "${label}" matched ${before} channels last run and 0 now — its upstream changed`);
 }

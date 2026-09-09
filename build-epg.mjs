@@ -382,18 +382,26 @@ const xmltvTime = (date) => `${date.toISOString().replace(/\D/g, "").slice(0, 14
 const eventGuide = (providerChannels) => {
   const channels = [];
   const programmes = [];
+  // The playlist repeats some fixtures verbatim, and nameKey drops punctuation
+  // so two near-identical names can land on one id. Deduplicating on the id
+  // rather than the name covers both: otherwise the second row emits no channel
+  // but still emits a programme, and the first channel lists it twice.
+  const taken = new Set();
 
   for (const ch of providerChannels) {
     if (ch.epg_channel_id) continue; // a real id means a real source can serve it
     const match = EVENT_NAME.exec(ch.name ?? "");
     if (!match) continue;
-    const [, day, month, hour, minute, event] = match;
 
+    const id = `event.${nameKey(ch.name)}`;
+    if (taken.has(id)) continue;
+    taken.add(id);
+
+    const [, day, month, hour, minute, event] = match;
     const start = eventStart(+day, +month, +hour, +minute);
     const stop = new Date(start.getTime() + EVENT_HOURS * HOUR_MS);
     if (stop.getTime() < Date.now()) continue; // a fixture the playlist never cleared out
 
-    const id = `event.${nameKey(ch.name)}`;
     channels.push({
       id,
       element:
@@ -412,7 +420,7 @@ const eventGuide = (providerChannels) => {
 
 const channels = await loadChannels();
 const index = buildIndex(channels);
-console.log(`provider: ${channels.length} channels, ${index.byId.size} distinct epg ids\n`);
+console.log(`provider: ${channels.length} channels, ${index.byId.size} distinct id keys\n`);
 
 const allChannels = [];
 const allProgrammes = [];
