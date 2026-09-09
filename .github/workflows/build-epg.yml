@@ -1,0 +1,49 @@
+name: Build EPG
+
+on:
+  schedule:
+    # epgshare01 regenerates around 05:30 UTC, so run after it.
+    - cron: "15 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-epg
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build guide
+        env:
+          XTREAM_HOST: ${{ secrets.XTREAM_HOST }}
+          XTREAM_USER: ${{ secrets.XTREAM_USER }}
+          XTREAM_PASS: ${{ secrets.XTREAM_PASS }}
+        run: node build-epg.mjs
+
+      - name: Fail if the guide looks empty
+        run: |
+          size=$(stat -c%s guide.xml.gz)
+          echo "guide.xml.gz is $size bytes"
+          if [ "$size" -lt 100000 ]; then
+            echo "Guide is suspiciously small, refusing to publish it."
+            exit 1
+          fi
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add guide.xml.gz
+          git diff --quiet --cached && echo "no change" && exit 0
+          git commit -m "EPG $(date -u +%Y-%m-%d)"
+          git push
