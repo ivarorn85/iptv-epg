@@ -172,6 +172,20 @@ some 45 other services that name channels the same way. `IS: Sýn Besta Deildin 
 and friends are **not** reachable this way — those names carry no fixture or
 time.
 
+### The one manual list
+
+`ALSO_KNOWN_AS` in `build-epg.mjs` maps a provider id to extra channel names
+that should also find it. It exists for rows no rule can reach: my provider
+numbers its 4K simulcasts — `UK: BBC One 1 HDR 4K`, `UK: BBC One 2 HDR 4K` —
+and gives them no id, so the only thing tying them to BBC One is knowing that
+the number is a feed index rather than part of the name.
+
+I measured the rule that would automate it (drop a trailing digit when the name
+carries a 4K/UHD/HDR marker). Across the whole playlist it matched exactly one
+row, and matched it wrongly: Sweden's `TV24 UHD` became `TV 2`, a different
+channel. So this is a list instead. Keep it short — if it grows, the rules are
+wrong.
+
 ### Two things that look like bugs and are not
 
 My provider gives every quality variant of a channel the same
@@ -356,7 +370,10 @@ Adding the 20 other European country files would gain roughly 2,580 rows but
 take the guide to **216 MB raw**, which is the size that chokes TiviMate. Add
 individual countries only if you actually watch them.
 
-`epg-us` is 500 MB uncompressed, within 3% of the largest string Node can hold.
+`epg-us` earns its keep despite the size: building without it loses **76
+channels and 10,157 programmes** — CBS, A&E, HGTV, MTV, VH1, Food Network,
+Discovery Family, Nat Geo Wild, Disney Jr, OWN, FYI, Univision. It is 500 MB
+uncompressed, within 3% of the largest string Node can hold.
 `fetchSource` checks the size and says so plainly, so the day it outgrows the
 ceiling it becomes a skipped source and the build carries on without it.
 

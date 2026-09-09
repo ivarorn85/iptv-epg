@@ -67,6 +67,19 @@ const SOURCES = [
 const OUT = "guide.xml.gz";
 const COUNTS = "counts.json";
 
+// The escape hatch, and deliberately a short one: provider ids mapped to extra
+// channel names that should also find them.
+//
+// Everything else here is a rule. These are the rows no rule can reach: my
+// provider numbers its 4K simulcasts ("BBC One 1 HDR 4K") and gives them no id,
+// so the only thing linking them to BBC One is the number being a feed index
+// rather than part of the name. A rule that dropped that digit would also turn
+// Sweden's TV24 into TV 2, which is a different channel — so this is a list
+// instead. Keep it short; if it grows, the rules are wrong.
+const ALSO_KNOWN_AS = {
+  "BBCOne.uk": ["UK: BBC One 1 HDR 4K", "UK: BBC One 2 HDR 4K"],
+};
+
 // The largest string V8 will hold. Some of these files are close enough to it
 // that saying so beats an ERR_STRING_TOO_LONG stack trace in the log.
 const MAX_STRING = 0x1fffffe8;
@@ -272,6 +285,7 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
   // so a schedule never reaches a same-named channel in another market.
   const withAliases = (element, labels, target) => {
     const names = aliasNames(labels, targetCc.get(target) ?? ccOf(target));
+    for (const name of ALSO_KNOWN_AS[target] ?? []) names.add(name);
     if (!names.size) return element;
     const extra = [...names].map((n) => `\n    <display-name>${escapeAttr(n)}</display-name>`).join("");
     return element.endsWith("/>")
