@@ -28,6 +28,8 @@ jobs:
           XTREAM_HOST: ${{ secrets.XTREAM_HOST }}
           XTREAM_USER: ${{ secrets.XTREAM_USER }}
           XTREAM_PASS: ${{ secrets.XTREAM_PASS }}
+          # epg-us is 500 MB uncompressed; don't leave the heap to chance.
+          NODE_OPTIONS: --max-old-space-size=6144
         run: node build-epg.mjs
 
       # Refuses a guide that would empty the grid. The job stops here, the last

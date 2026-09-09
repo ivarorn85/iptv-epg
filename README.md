@@ -15,7 +15,7 @@ rewrites the guide's ids to the provider's so matching succeeds on step one.
 
 ## Matching rules
 
-Applied in three passes so a loose match can never steal a channel that
+Applied in five passes so a loose match can never steal a channel that
 something else matches precisely.
 
 **Pass 1, exact:**
@@ -56,6 +56,25 @@ carrier: `AandE Network (East).us` names the channel that `US: A&E HD` is.
 This pass is what makes everything outside the UK work. Without it, US, Denmark,
 Norway and Sweden all matched zero channels.
 
+**Pass 4, Nordic sources serve the Icelandic international channels:** the two
+Icelandic sources cover the national channels and most internationals. Anything
+left — an `Animal Planet.is` or `Arte.is` with no Icelandic entry — is on the
+Nordic feed, so DK/NO/SE may serve it. Marked `borrowIcelandic` on those three
+only, never UK or US: those carry a different regional schedule, and wrong
+programmes are worse than none.
+
+**Pass 5, names for the rows with no id:** a row with an empty
+`epg_channel_id` can never match on step one, but TiviMate's third step
+compares the channel name against `<display-name>`. So the guide carries my
+provider's own channel names as extra display-names, which is what lets
+`UK: TNT Sports 5 FHD` and the `US: NHL ...` feeds show a schedule at all.
+These are country-scoped like pass 3 — without that, the Vietnamese Animal
+Planet collects a Nordic schedule.
+
+Every pass adds to what earlier ones found instead of skipping a resolved
+channel, because my provider often has two ids for one channel — `TNT Sports
+3.uk` alongside `TNTSports3 HD.uk` — where only one matches exactly.
+
 One source channel can fan out to several provider channels. `5.USA.uk` feeds
 both `5 USA.uk` and `5USA.uk`.
 
@@ -70,17 +89,25 @@ a published schedule, so this is correct rather than a gap.
 
 ## Sources
 
-| Source                        | Coverage                      | Notes                                       |
-| ----------------------------- | ----------------------------- | ------------------------------------------- |
-| is-epg.run.place `guide3.xml` | Iceland, 14 channels          | Ids already in `IS: RUV FHD` form           |
-| epgshare01                    | UK, US, US sports, DK, NO, SE | Ready-made per-country files, updated daily |
+| Source                        | Coverage                      | Notes                                             |
+| ----------------------------- | ----------------------------- | ------------------------------------------------- |
+| iptv-epg.org `epg-is.xml.gz`  | Iceland, 70 channels          | Ids already in my provider's form, `AnimalPlanet.is` |
+| is-epg.run.place `guide3.xml` | Iceland, 14 channels          | Ids already in `IS: RUV FHD` form                 |
+| epgshare01                    | UK, US, US sports, DK, NO, SE | Ready-made per-country files, updated daily       |
+| iptv-epg.org `epg-gb`, `epg-us` | UK and US gap-fillers       | Cover what epgshare has no entry for at all       |
 
-Order matters: the first source to claim a channel wins, and Iceland is first
-because that file is purpose-built for this playlist.
+The two Icelandic sources are complementary, not redundant. `epg-is` carries a
+full week of RUV and RUV 2 where guide3 has a single day, so it goes first;
+guide3 is the only source for Sýn, Sýn Sport 1-4, Sjónvarp Símans, Samstöðin
+and KVF, and picks those up next.
 
-The Icelandic source is marked `passthrough`, so channels it carries that my
-provider has no id for are emitted unchanged and TiviMate name-matches them as
-it did before.
+Order matters: the first source to claim a channel wins. The Icelandic sources
+come first because they are purpose-built for this playlist, and the two
+gap-fillers come after the epgshare file for their country so they only pick up
+what it has no entry for.
+
+`guide3` is marked `passthrough`, so channels it carries that my provider has no
+id for are emitted unchanged and TiviMate name-matches them as it did before.
 
 Note there is no Iceland file on epgshare01. `IE1` is Ireland. Do not substitute it.
 
@@ -88,28 +115,38 @@ Stöð 2 no longer exists — it was retired in June 2025 and replaced by Sýn, 
 `IS: Sýn FHD` is that channel and guide3 already covers it.
 
 Deliberately excluded: `epg_ripper_ALL_SOURCES1` (199 MB, chokes TiviMate) and
-`epg_ripper_US_LOCALS1` (56 MB). iptv-org/epg was considered and rejected — it is
-a scraper that hits hundreds of broadcaster sites per run, too slow and fragile
-for a scheduled job.
+`epg_ripper_US_LOCALS1` (536 MB uncompressed, and worthless here — see below).
+iptv-org/epg was considered and rejected — it is a scraper that hits hundreds of
+broadcaster sites per run, too slow and fragile for a scheduled job.
 
 ### Expected match counts
 
 Baseline from a verified run, for comparing against the log after a rebuild. A
 source dropping sharply means its upstream changed its id or naming scheme.
 
-| Source    | Channels | Note                                                   |
-| --------- | -------- | ------------------------------------------------------ |
-| Iceland   | 11       | 14 source channels, 3 are duplicate ids, 1 passthrough |
-| UK        | 160      |                                                        |
-| US        | 139      |                                                        |
-| US sports | 0        | provider carries no MILB feeds with ids                |
-| Denmark   | 54       |                                                        |
-| Norway    | 2        | epgshare's `.no` ids embed the country as a word       |
-| Sweden    | 84       |                                                        |
+| Source        | Channels | Note                                             |
+| ------------- | -------- | ------------------------------------------------ |
+| Iceland extra | 21       | a full week of RUV, plus the internationals      |
+| Iceland       | 10       | Sýn, Sýn Sport, Sjónvarp Símans, KVF             |
+| UK            | 186      |                                                  |
+| UK extra      | 69       | Sky Sports F1, Sky Cinema, Sky Atlantic, E4      |
+| US            | 147      |                                                  |
+| US sports     | 30       | NHL team feeds, all matched by name              |
+| US extra      | 74       | A&E, CBS, HGTV, Food Network, beIN Sports 4-8    |
+| Denmark       | 64       |                                                  |
+| Norway        | 5        | epgshare's `.no` ids embed the country as a word |
+| Sweden        | 81       |                                                  |
 
-450 channels and ~47,000 programmes, 4.3 MB gzipped. `US sports` and `Norway`
-earn almost nothing and could be dropped from `SOURCES`; they are kept because
-they cost only download time and may improve upstream.
+687 channels and ~78,000 programmes, 7.9 MB gzipped, 62 MB raw.
+
+That reaches 4,086 playlist rows: 3,912 of the 8,806 that carry an
+`epg_channel_id`, plus 174 with no id that the pass-5 display-names pick up. The
+rest is not a matching problem: 68% of the playlist has no id at all and no
+source anywhere publishes a schedule for it — the Simmin/Viaplay event feeds,
+the `CHAMP | Birmingham City` per-match channels, and the 24/7 loops.
+
+Keep the provider's own EPG enabled in TiviMate at a lower priority. It is the
+only thing that can ever fill those rows.
 
 ## Setup
 
@@ -197,6 +234,46 @@ https://epgshare01.online/epgshare01/epg_ripper_UK1.txt
 
 To add a country, uncomment or add a line in `SOURCES`. Verified filenames
 include DE1, ES1, IT1, FR1, NL1, PL1, PT1, IE1.
+
+### Sources measured and rejected
+
+Checked against the real playlist, so they do not need re-testing:
+
+| Source                                | Result                                            |
+| ------------------------------------- | ------------------------------------------------- |
+| `US_LOCALS1`                          | 53 MB download, **536 MB raw** — past Node's      |
+|                                       | 512 MB string limit, so it cannot even be parsed. |
+|                                       | Matches 0 of the uncovered US ids anyway: its     |
+|                                       | ids are bare call signs (`KIVI-DT.us_locals1`).   |
+| `PEACOCK1` `PLEX1` `DISTROTV1`        | 0 matches each.                                   |
+| `BEIN1` `DIRECTVSPORTS1` `ALJAZEERA1` | 0 matches each.                                   |
+| `RAKUTEN1`                            | 10 rows for a 9.2 MB download.                    |
+| `IE1`                                 | 2 rows. Ireland, not Iceland.                     |
+
+iptv-epg.org's `epg-is`, `epg-gb` and `epg-us` were measured and kept — they are
+the `extra` sources above. `epg-us` is 500 MB uncompressed, within 3% of the
+largest string Node can hold, so `fetchSource` checks the size and reports it
+plainly; the day it outgrows the ceiling it becomes a skipped source and the
+build carries on without it.
+
+### Are the Icelandic guides right?
+
+Checked, because a silently shifted guide is the worst failure mode. Both
+Icelandic sources publish every programme as `+0000`, which is correct — Iceland
+is UTC+0 year round with no DST. RUV's `Fréttir` lands at 19:00 in both, its real
+broadcast time. Where the two overlap they agree exactly: all 28 of guide3's RUV
+programmes are identical in start time and title to `epg-is`.
+
+siminn.is/dagskra is not usable as a reference — the grid needs a subscription
+session and renders no programme cells without one.
+
+Adding the 20 other European country files would gain ~2,580 rows but take the
+guide to **216 MB raw**, which is the size that chokes TiviMate. Add individual
+countries only if you actually watch them.
+
+Some gaps are the source's, not the matching's: UK1 carries no Eurosport and no
+Sky Sports F1 at all, and only regional `BBC.One.Yorks.HD.uk`-style variants
+rather than a plain BBC One.
 
 If TiviMate ever refuses the release URL, the fallback is to force-push the
 guide to a single-commit orphan branch and point TiviMate at

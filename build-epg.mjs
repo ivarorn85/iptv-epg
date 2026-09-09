@@ -14,14 +14,31 @@ const EPGSHARE = "https://epgshare01.online/epgshare01/epg_ripper_";
 // Order matters: the first source to claim a channel wins.
 // `passthrough` keeps unmatched channels as-is, which the Icelandic guide
 // needs because its ids are already your channel names.
+const IPTVEPG = "https://iptv-epg.org/files/epg-";
+
 const SOURCES = [
+  // Ids already in my provider's vocabulary ("AnimalPlanet.is"), and it runs
+  // first because it carries a full week of RUV and RUV 2 where guide3 has one
+  // day. It has nothing for Sýn, Sýn Sport, Sjónvarp Símans or KVF, so guide3
+  // still does the heavy lifting and picks those up next.
+  { label: "Iceland extra", url: `${IPTVEPG}is.xml.gz` },
   { label: "Iceland", url: "https://is-epg.run.place/iptv/guide3.xml", passthrough: true },
   { label: "UK", url: `${EPGSHARE}UK1.xml.gz` },
+  // Fills what UK1 has no entry for at all: Sky Sports F1, the Sky Cinema
+  // channels, Sky Atlantic, E4, More 4, and a plain BBC One.
+  { label: "UK extra", url: `${IPTVEPG}gb.xml.gz` },
   { label: "US", url: `${EPGSHARE}US2.xml.gz` },
   { label: "US sports", url: `${EPGSHARE}US_SPORTS1.xml.gz` },
-  { label: "Denmark", url: `${EPGSHARE}DK1.xml.gz` },
-  { label: "Norway", url: `${EPGSHARE}NO1.xml.gz` },
-  { label: "Sweden", url: `${EPGSHARE}SE1.xml.gz` },
+  // 500 MB uncompressed, within 3% of the largest string Node can hold. It is
+  // last because it only fills leftovers, and it will start being skipped once
+  // it outgrows that ceiling — see the size check in fetchSource.
+  { label: "US extra", url: `${IPTVEPG}us.xml.gz` },
+  // `borrowIcelandic` lets these serve my provider's Icelandic entries for
+  // international channels, which carry the Nordic feed. Only the Nordic
+  // sources may: a UK schedule on Discovery Iceland is the wrong programmes.
+  { label: "Denmark", url: `${EPGSHARE}DK1.xml.gz`, borrowIcelandic: true },
+  { label: "Norway", url: `${EPGSHARE}NO1.xml.gz`, borrowIcelandic: true },
+  { label: "Sweden", url: `${EPGSHARE}SE1.xml.gz`, borrowIcelandic: true },
   // { label: "Germany", url: `${EPGSHARE}DE1.xml.gz` },
   // { label: "Spain", url: `${EPGSHARE}ES1.xml.gz` },
   // { label: "Italy", url: `${EPGSHARE}IT1.xml.gz` },
@@ -77,11 +94,18 @@ const attr = (element, name) => {
   return m ? m[1] : null;
 };
 
+// The largest string V8 will hold. Some of these files are close enough to it
+// that saying so beats an ERR_STRING_TOO_LONG stack trace in the log.
+const MAX_STRING = 0x1fffffe8;
+
 const fetchSource = async ({ url }) => {
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
-  return url.endsWith(".gz") ? gunzipSync(buf).toString("utf8") : buf.toString("utf8");
+  const raw = url.endsWith(".gz") ? gunzipSync(buf) : buf;
+  if (raw.length > MAX_STRING)
+    throw new Error(`${(raw.length / 1048576).toFixed(0)} MB uncompressed, too big to parse`);
+  return raw.toString("utf8");
 };
 
 const loadChannels = async () => {
@@ -104,16 +128,19 @@ const loadChannels = async () => {
 // the rows that don't carry a prefix.
 const providerCc = (ch) => {
   const prefix = /^([A-Za-z]{2})\s*:/.exec(ch.name ?? "");
-  return prefix ? prefix[1].toLowerCase() : ccOf(ch.epg_channel_id);
+  return prefix ? prefix[1].toLowerCase() : ccOf(ch.epg_channel_id ?? "");
 };
 
-// Five lookups, tried in order of confidence.
+// Six lookups, tried in order of confidence.
 const buildIndex = (channels) => {
   const byId = new Map();
   const byName = new Map();
   const byBase = new Map();
   const byScoped = new Map();
   const byScopedBase = new Map();
+  const byIcelandic = new Map();
+  const aliases = new Map();
+  const targetCc = new Map();
   const add = (map, key, value) => {
     if (!key) return;
     if (!map.has(key)) map.set(key, new Set());
@@ -122,7 +149,18 @@ const buildIndex = (channels) => {
 
   for (const ch of channels) {
     const target = ch.epg_channel_id;
-    if (!target) continue; // event feeds with no id can never match
+    if (!target) {
+      // No id means TiviMate can only ever match this row on the channel name,
+      // so remember the name and emit it as an extra <display-name>. Keyed by
+      // country, or the Vietnamese Animal Planet would collect a Nordic one.
+      if (ch.name) {
+        const cc = providerCc(ch);
+        add(aliases, scopedKey(cc, ch.name), ch.name);
+        add(aliases, scopedBaseKey(cc, ch.name), ch.name);
+      }
+      continue;
+    }
+    targetCc.set(target, providerCc(ch));
     add(byId, idKey(target), target);
     if (ch.name) {
       add(byName, nameKey(ch.name), target);
@@ -134,10 +172,11 @@ const buildIndex = (channels) => {
       for (const label of [ch.name, target.replace(/\.[a-z]{2}\d?$/, "")]) {
         add(byScoped, scopedKey(cc, label), target);
         add(byScopedBase, scopedBaseKey(cc, label), target);
+        if (cc === "is") add(byIcelandic, baseKey(bare(label)), target);
       }
     }
   }
-  return { byId, byName, byBase, byScoped, byScopedBase };
+  return { byId, byName, byBase, byScoped, byScopedBase, byIcelandic, aliases, targetCc };
 };
 
 const CHANNEL = /<channel\b[^>]*?>[\s\S]*?<\/channel>|<channel\b[^>]*?\/>/g;
@@ -147,7 +186,10 @@ const DISPLAY_NAME = /<display-name[^>]*>([\s\S]*?)<\/display-name>/g;
 const displayNames = (element) =>
   [...element.matchAll(DISPLAY_NAME)].map((m) => m[1].trim());
 
-const convert = (xml, { byId, byName, byBase, byScoped, byScopedBase }, passthrough) => {
+const bodyOf = (sourceId) => sourceId.replace(/\.[a-z]{2}\d?$/, "");
+
+const convert = (xml, index, { passthrough, borrowIcelandic } = {}) => {
+  const { byId, byName, byBase, byScoped, byScopedBase, byIcelandic, aliases, targetCc } = index;
   const elements = [...xml.matchAll(CHANNEL)]
     .map(([element]) => ({ element, sourceId: attr(element, "id") }))
     .filter((c) => c.sourceId);
@@ -155,48 +197,88 @@ const convert = (xml, { byId, byName, byBase, byScoped, byScopedBase }, passthro
   const resolved = new Map(); // source id -> Set of target ids
   const claimed = new Set();
 
-  // Pass 1: exact matches only, so a loose match can never steal a channel
-  // that something else matches precisely.
-  for (const { element, sourceId } of elements) {
-    const targets =
-      byId.get(idKey(sourceId)) ??
-      byName.get(nameKey(sourceId)) ??
-      displayNames(element).map((d) => byName.get(nameKey(d))).find(Boolean);
-    if (!targets) continue;
-    resolved.set(sourceId, targets);
+  // Every pass adds to what earlier passes found rather than skipping a
+  // channel that is already resolved: my provider often has two ids for one
+  // channel, "TNT Sports 3.uk" alongside "TNTSports3 HD.uk", and only one of
+  // them matches exactly. Claimed targets are never revisited, so a loose
+  // match still cannot steal what something else matched precisely.
+  const take = (sourceId, found) => {
+    const targets = new Set([...(found ?? [])].filter((t) => !claimed.has(t)));
+    if (!targets.size) return;
+    const already = resolved.get(sourceId);
+    if (already) for (const t of targets) already.add(t);
+    else resolved.set(sourceId, targets);
     for (const t of targets) claimed.add(t);
+  };
+
+  const labelsOf = (element, sourceId) => [bodyOf(sourceId), ...displayNames(element)];
+
+  // Pass 1: exact ids and names.
+  for (const { element, sourceId } of elements) {
+    take(
+      sourceId,
+      byId.get(idKey(sourceId)) ??
+        byName.get(nameKey(sourceId)) ??
+        displayNames(element).map((d) => byName.get(nameKey(d))).find(Boolean)
+    );
   }
 
-  // Pass 2: quality-suffix fallback for whatever is left over.
+  // Pass 2: quality-suffix fallback.
   for (const { element, sourceId } of elements) {
-    if (resolved.has(sourceId)) continue;
-    const loose =
+    take(
+      sourceId,
       byBase.get(baseKey(sourceId)) ??
-      displayNames(element).map((d) => byBase.get(baseKey(d))).find(Boolean);
-    const targets = new Set([...(loose ?? [])].filter((t) => !claimed.has(t)));
-    if (targets.size) {
-      resolved.set(sourceId, targets);
-      for (const t of targets) claimed.add(t);
-    }
+        displayNames(element).map((d) => byBase.get(baseKey(d))).find(Boolean)
+    );
   }
 
   // Pass 3: my provider's ids come from a different vendor than epgshare's, so
   // for most countries the name is the only thing the two sides share. Country
   // is part of the key, so this cannot match across countries.
   for (const { element, sourceId } of elements) {
-    if (resolved.has(sourceId)) continue;
     const cc = ccOf(sourceId);
     if (!cc) continue;
     let loose;
-    for (const label of [sourceId.replace(/\.[a-z]{2}\d?$/, ""), ...displayNames(element)]) {
+    for (const label of labelsOf(element, sourceId)) {
       loose = byScoped.get(scopedKey(cc, label)) ?? byScopedBase.get(scopedBaseKey(cc, label));
       if (loose) break;
     }
-    const targets = new Set([...(loose ?? [])].filter((t) => !claimed.has(t)));
-    if (targets.size) {
-      resolved.set(sourceId, targets);
-      for (const t of targets) claimed.add(t);
+    take(sourceId, loose);
+  }
+
+  // Pass 4: the Icelandic guide covers 14 national channels. The rest of my
+  // provider's Icelandic entries are international channels on the Nordic
+  // feed, which only these sources carry.
+  if (borrowIcelandic) {
+    for (const { element, sourceId } of elements) {
+      let loose;
+      for (const label of labelsOf(element, sourceId)) {
+        loose = byIcelandic.get(baseKey(bare(label)));
+        if (loose) break;
+      }
+      take(sourceId, loose);
     }
+  }
+
+  // Pass 5: channels wanted only by rows that carry no id. They are emitted
+  // under their own id and matched by name, so the id is irrelevant.
+  const aliasNames = (element, sourceId, cc) => {
+    const names = new Set();
+    if (!cc) return names;
+    for (const label of labelsOf(element, sourceId))
+      for (const name of [
+        ...(aliases.get(scopedKey(cc, label)) ?? []),
+        ...(aliases.get(scopedBaseKey(cc, label)) ?? []),
+      ])
+        names.add(name);
+    return names;
+  };
+
+  for (const { element, sourceId } of elements) {
+    if (resolved.has(sourceId)) continue;
+    const countries = borrowIcelandic ? [ccOf(sourceId), "is"] : [ccOf(sourceId)];
+    if (countries.some((cc) => aliasNames(element, sourceId, cc).size))
+      resolved.set(sourceId, new Set([sourceId]));
   }
 
   // Passthrough runs last so every match has had its chance first.
@@ -206,12 +288,27 @@ const convert = (xml, { byId, byName, byBase, byScoped, byScopedBase }, passthro
     }
   }
 
+  // TiviMate's last resort is the channel name against a <display-name>, so
+  // carry my provider's own names for the rows that have no id to match on.
+  // Scoped to the country of the id being emitted, so a schedule never reaches
+  // a same-named channel in another market.
+  const withAliases = (element, sourceId, target) => {
+    const names = aliasNames(element, sourceId, targetCc.get(target) ?? ccOf(sourceId));
+    if (!names.size) return element;
+    const extra = [...names].map((n) => `\n    <display-name>${escapeAttr(n)}</display-name>`).join("");
+    return element.endsWith("/>")
+      ? `${element.replace(/\s*\/>$/, ">")}${extra}\n  </channel>`
+      : element.replace(/<\/channel>$/, `${extra}\n  </channel>`);
+  };
+
   const channels = [];
   for (const { element, sourceId } of elements) {
     const targets = resolved.get(sourceId);
     if (!targets) continue;
     for (const target of targets)
-      channels.push(element.replace(/\bid="[^"]*"/, `id="${escapeAttr(target)}"`));
+      channels.push(
+        withAliases(element, sourceId, target).replace(/\bid="[^"]*"/, `id="${escapeAttr(target)}"`)
+      );
   }
 
   const programmes = [];
@@ -240,7 +337,7 @@ const seen = new Set();
 for (const source of SOURCES) {
   try {
     const xml = await fetchSource(source);
-    const { channels: c, programmes: p } = convert(xml, index, source.passthrough);
+    const { channels: c, programmes: p } = convert(xml, index, source);
 
     let kept = 0;
     const skipped = new Set();
