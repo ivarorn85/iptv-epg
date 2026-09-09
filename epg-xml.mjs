@@ -22,6 +22,32 @@ export const escapeAttr = (s) =>
 
 export const mb = (bytes, digits = 1) => `${(bytes / 1048576).toFixed(digits)} MB`;
 
+// Iceland is UTC+0 all year, and every source here publishes in it, so the
+// offset is a constant rather than something to carry around.
+export const xmltvTime = (date) => `${date.toISOString().replace(/\D/g, "").slice(0, 14)} +0000`;
+
+// Emitters for the sources that publish JSON rather than XMLTV. Element order
+// follows the DTD — title, desc, then category — because some readers care.
+export const xmltvChannel = (id, names) =>
+  `<channel id="${escapeAttr(id)}">\n` +
+  names
+    .filter(Boolean)
+    .map((name) => `    <display-name>${escapeAttr(name)}</display-name>\n`)
+    .join("") +
+  `  </channel>`;
+
+export const xmltvProgramme = ({ channel, start, stop, title, desc, categories = [], lang }) => {
+  const tag = (name, text) =>
+    `    <${name}${lang ? ` lang="${lang}"` : ""}>${escapeAttr(text)}</${name}>\n`;
+  return (
+    `<programme start="${xmltvTime(start)}" stop="${xmltvTime(stop)}" channel="${escapeAttr(channel)}">\n` +
+    tag("title", title) +
+    (desc ? tag("desc", desc) : "") +
+    categories.filter(Boolean).map((category) => tag("category", category)).join("") +
+    `  </programme>`
+  );
+};
+
 export const HOUR_MS = 3_600_000;
 
 // iptv-epg.org fills channels it has no schedule for with hourly filler, and

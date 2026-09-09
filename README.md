@@ -149,9 +149,17 @@ channels after the event, and gives them no id:
 No guide will ever carry those, but the name already _is_ the schedule, so it
 gets read back out into a channel and one programme. The date is day/month, the
 time is Icelandic local which is UTC, and the year is whichever puts the date
-nearest today. The name gives no end time, so each event gets a fixed
-three-hour block, and fixtures that have already finished are skipped — the
-playlist keeps stale ones for months.
+nearest today. Fixtures that have already finished are skipped — the playlist
+keeps stale ones for months.
+
+The name gives no end time, so each event gets a fixed three-hour block —
+except where Viaplay knows better. Viaplay's own API is no use as a source
+(every fixture is its own stream, with no channel to key on), but it does
+publish the real end of each one, and matching on title plus start time reaches
+most of the `[Viaplay IS]` channels. That turns a flat three hours into the
+truth: a 45-minute goal show stays 45 minutes, and a baseball game that runs 330
+does not go blank two and a half hours in. Anything it does not know keeps the
+fixed block.
 
 This is the one place the guide contains programmes no source published. They
 are the provider's own strings, reshaped. Around 850 channels come from it,
@@ -174,6 +182,8 @@ provider sometimes has two ids for one channel — `TNT Sports 3.uk` alongside
 
 | Source                          | Coverage                      | Why it is in the list                                |
 | ------------------------------- | ----------------------------- | ---------------------------------------------------- |
+| **ruv.is** GraphQL | RÚV, RÚV 2 | First party. Real end times, not inferred ones |
+| **syn.is** JSON API | 13 Sýn channels | First party. The only source anywhere for Sýn+, Sýn Sport 5 and Sýn Sport Ísland |
 | iptv-epg.org `epg-is`           | Iceland, 70 channels          | Ids already in my provider's form, `AnimalPlanet.is` |
 | is-epg.run.place `guide3.xml`   | Iceland, 14 channels          | Ids already in `IS: RUV FHD` form                    |
 | epgshare01 per country          | UK, US, US sports, DK, NO, SE | Ready-made, updated daily                            |
@@ -181,11 +191,28 @@ provider sometimes has two ids for one channel — `TNT Sports 3.uk` alongside
 
 The first source to claim a channel wins, so the order is the design.
 
-The two Icelandic sources are complementary rather than redundant: `epg-is`
-carries a full week of RUV and RUV 2 where guide3 has a single day, so it goes
-first, but guide3 is the only source anywhere for Sýn, Sýn Sport 1-4, Sjónvarp
-Símans, Samstöðin and KVF. The two gap-fillers come _after_ the epgshare file
-for their country, so they only pick up what it misses.
+**The broadcasters' own APIs go first.** `syn.is/api/epg` lists its stations and
+serves each one's schedule as JSON; `ruv.is/gql` answers a GraphQL query per
+channel per day. Both are first party, so they beat any aggregator for the
+channels they own — and between them they carry things no third party has at
+all. Against what the aggregators were giving:
+
+| Channel | Aggregators | Broadcaster API |
+| --- | --- | --- |
+| `RUV.is` | 220 / 7d | **291 / 11d** |
+| `Synsport.is` | 143 / 8d | **212 / 12d** |
+| `Synsportisland.is` | nothing | **324 / 12d** |
+| `Sýn+`, `Sýn Sport 5` | nothing | 110, 4 |
+
+The RÚV query is written out in full rather than sent as the persisted-query
+hash their website uses, because that hash belongs to whichever build of the
+site is current and would break the day they deploy.
+
+The aggregators stay, demoted, because they still carry what the broadcasters do
+not: `epg-is` has the Icelandic international channels (`CNN.is`, `Sky News.is`,
+`Eurosport.is`), and guide3 is the only source for Sjónvarp Símans, Samstöðin
+and KVF. The two gap-fillers come after the epgshare file for their country, so
+they only pick up what it misses.
 
 `guide3` is marked `passthrough`: channels it carries that my provider has no id
 for are emitted unchanged, and TiviMate name-matches them as it did before.
@@ -206,8 +233,10 @@ changed its ids or its naming.
 
 | Source        | Channels | Note                                             |
 | ------------- | -------- | ------------------------------------------------ |
-| Iceland extra | 21       | a full week of RUV, plus the internationals      |
-| Iceland       | 10       | Sýn, Sýn Sport, Sjónvarp Símans, KVF             |
+| RÚV | 2 | RÚV and RÚV 2, from ruv.is |
+| Sýn | 13 | the whole Sýn family, from syn.is |
+| Iceland extra | 19 | the Icelandic international channels |
+| Iceland | 4 | Sjónvarp Símans, Samstöðin, KVF |
 | UK            | 171      |                                                  |
 | UK extra      | 65       | Sky Sports F1, Sky Cinema, Sky Atlantic, E4      |
 | US            | 142      |                                                  |
@@ -295,6 +324,8 @@ Checked against the real playlist, so none of this needs re-testing.
 | `RAKUTEN1`                            | 10 rows for a 9.2 MB download.                                                                                                                                                             |
 | `IE1`                                 | 2 rows. Ireland, not Iceland.                                                                                                                                                              |
 | iptv-org/epg                          | A scraper that hits hundreds of broadcaster sites per run. Too slow and too fragile for a scheduled job.                                                                                   |
+| viaplay.is content API | Not usable as a source — start and end times but **no channel field at all**, so there is nothing to key XMLTV on. Its end times *are* borrowed for the event pass, below. |
+| framundanibeinni.is | Names a channel per fixture, but 228 of its 369 entries are `viaplay` or `livey`, which identify the *service* rather than which V Sport Live or `[Livey]` channel carries it. The rest is `syn*`/`ruv*`/`eurosport*`, already covered better — syn.is gives `synsportisland` 324 entries where this gives 4. |
 
 Adding the 20 other European country files would gain roughly 2,580 rows but
 take the guide to **216 MB raw**, which is the size that chokes TiviMate. Add
