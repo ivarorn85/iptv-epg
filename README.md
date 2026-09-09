@@ -82,6 +82,27 @@ Every pass adds to what earlier ones found instead of skipping a resolved
 channel, because my provider often has two ids for one channel — `TNT Sports
 3.uk` alongside `TNTSports3 HD.uk` — where only one matches exactly.
 
+**Events read out of their own names:** my provider names its per-event channels
+after the event, and gives them no id:
+
+```
+[Viaplay IS] (9/9) 13:55 Liverpool - Atlético Madrid
+[Livey] (9/9) 16:35 Aalborg Handbold - Paris Saint-Germain
+```
+
+No guide will ever carry those, but the name already is the schedule, so it gets
+read back out into a channel and one programme. The date is day/month, the time
+is Icelandic local which is UTC, and the year is whichever puts the date nearest
+today. The name gives no end time, so each event gets a fixed block. This is the
+one place the guide contains programmes no source published — they are my
+provider's own strings, reshaped.
+
+Around 760 channels come from this, across `[Livey]`, `[Viaplay IS]`,
+`[DisneyIS]`, `[Svensk]`, `[HBO Max UK]` and about 45 other services that name
+their channels the same way. Fixtures that have already finished are skipped,
+since the playlist keeps stale ones for months. `IS: Sýn Besta Deildin 1` and
+friends are **not** reachable this way — those names carry no fixture or time.
+
 One source channel can fan out to several provider channels. `5.USA.uk` feeds
 both `5 USA.uk` and `5USA.uk`.
 
@@ -142,9 +163,11 @@ source dropping sharply means its upstream changed its id or naming scheme.
 | US extra      | 74       | A&E, CBS, HGTV, Food Network, beIN Sports 4-8    |
 | Denmark       | 64       |                                                  |
 | Norway        | 5        | epgshare's `.no` ids embed the country as a word |
+| Denmark       | 59       |                                                  |
 | Sweden        | 81       |                                                  |
+| Events        | 758      | read out of the channel names, not fetched       |
 
-687 channels and ~78,000 programmes, 7.9 MB gzipped, 62 MB raw.
+1,405 channels and ~78,000 programmes, 7.6 MB gzipped, 62 MB raw.
 
 That reaches 4,086 playlist rows: 3,912 of the 8,806 that carry an
 `epg_channel_id`, plus 174 with no id that the pass-5 display-names pick up. The
@@ -163,6 +186,7 @@ only thing that can ever fill those rows.
    ```
    build-epg.mjs
    check-guide.mjs
+   epg-xml.mjs
    README.md
    .gitignore
    .github/workflows/build-epg.yml
@@ -229,8 +253,11 @@ fewer than 300 channels or 20,000 programmes, or one whose schedule does not run
 at least 24 hours ahead. That last check is the one a size floor misses: a
 source can serve a large, well-formed, completely stale file.
 
-Raise the floors if the real counts climb well above them, or the guard stops
-being able to detect a source dropping out.
+Those are totals, though, so they cannot see one source dying while the others
+hold the numbers up — UK1 vanishing entirely still clears every one of them. So
+each run also writes its per-source counts, and the next run refuses to publish
+if a source that was carrying 20+ channels now carries none. That needs no
+threshold to maintain: `status.json` is the baseline, and it updates itself.
 
 If a channel stays empty, check whether epgshare carries it at all. The id lists
 are small and open in a browser:
