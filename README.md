@@ -113,12 +113,14 @@ they cost only download time and may improve upstream.
 
 ## Setup
 
-1. Create a **public** repo (public so TiviMate can read the raw file without a
+1. Create a **public** repo (public so TiviMate can read the guide without a
    token) and push these files:
 
    ```
    build-epg.mjs
+   check-guide.mjs
    README.md
+   .gitignore
    .github/workflows/build-epg.yml
    ```
 
@@ -136,10 +138,10 @@ they cost only download time and may improve upstream.
 3. Run it once by hand: Actions, Build EPG, Run workflow. Check the per-source
    match counts in the log.
 
-4. Add the raw URL in TiviMate under Settings, EPG, add source:
+4. Add the release URL in TiviMate under Settings, EPG, add source:
 
    ```
-   https://raw.githubusercontent.com/USER/REPO/main/guide.xml.gz
+   https://github.com/USER/REPO/releases/download/epg/guide.xml.gz
    ```
 
    Give it higher priority than the provider's own EPG, then Settings, EPG,
@@ -149,6 +151,22 @@ they cost only download time and may improve upstream.
    `is-epg.run.place` source from TiviMate. It is merged into this file.
 
 Rebuilds daily at 06:15 UTC.
+
+## How it publishes
+
+The guide is uploaded as the asset of a fixed release tag, `epg`, and is not
+committed. The tag never moves, so the download URL above is permanent, and the
+repository stays a few hundred kilobytes instead of gaining 4 MB a day — daily
+commits would have passed a gigabyte inside a year.
+
+`status.json` is the one thing committed each run. It is a few hundred bytes,
+records what was published, and keeps the repository active: GitHub disables
+scheduled workflows in a public repo after 60 days with no activity.
+
+Nothing needs checking on a schedule. `check-guide.mjs` refuses to publish a
+guide that would empty the grid, and a refusal fails the workflow, which mails
+you. Confirm those mails are on once, under github.com/settings/notifications,
+Actions.
 
 ## Local run
 
@@ -161,8 +179,14 @@ Node 22, no dependencies.
 
 ## Maintenance
 
-The workflow refuses to publish a guide under 100 KB, so an upstream outage
-leaves the last good file in place rather than blanking the grid.
+`check-guide.mjs` gates every publish, so an upstream outage leaves the last
+good release in place rather than blanking the grid. It refuses a guide with
+fewer than 300 channels or 20,000 programmes, or one whose schedule does not run
+at least 24 hours ahead. That last check is the one a size floor misses: a
+source can serve a large, well-formed, completely stale file.
+
+Raise the floors if the real counts climb well above them, or the guard stops
+being able to detect a source dropping out.
 
 If a channel stays empty, check whether epgshare carries it at all. The id lists
 are small and open in a browser:
@@ -174,5 +198,7 @@ https://epgshare01.online/epgshare01/epg_ripper_UK1.txt
 To add a country, uncomment or add a line in `SOURCES`. Verified filenames
 include DE1, ES1, IT1, FR1, NL1, PL1, PT1, IE1.
 
-Committing the guide daily grows history. At a few MB per commit this is
-irrelevant for years; squash the branch if it ever matters.
+If TiviMate ever refuses the release URL, the fallback is to force-push the
+guide to a single-commit orphan branch and point TiviMate at
+`raw.githubusercontent.com/USER/REPO/epg/guide.xml.gz` instead. That keeps a
+direct URL with no redirect, at the cost of a daily force-push.

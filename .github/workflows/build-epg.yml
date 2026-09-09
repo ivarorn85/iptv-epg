@@ -30,20 +30,29 @@ jobs:
           XTREAM_PASS: ${{ secrets.XTREAM_PASS }}
         run: node build-epg.mjs
 
-      - name: Fail if the guide looks empty
-        run: |
-          size=$(stat -c%s guide.xml.gz)
-          echo "guide.xml.gz is $size bytes"
-          if [ "$size" -lt 100000 ]; then
-            echo "Guide is suspiciously small, refusing to publish it."
-            exit 1
-          fi
+      # Refuses a guide that would empty the grid. The job stops here, the last
+      # good release stays up, and the failure mail is the signal to look.
+      - name: Check the guide is publishable
+        run: node check-guide.mjs
 
-      - name: Commit
+      # Served from a release rather than from git, so the repository does not
+      # grow by 4 MB a day. The tag is fixed, so the download URL never changes.
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view epg >/dev/null 2>&1 ||
+            gh release create epg --title "EPG" \
+              --notes "Rolling XMLTV guide. The asset is replaced daily; this release is the stable download URL."
+          gh release upload epg guide.xml.gz --clobber
+
+      # A few hundred bytes a day. Records what was published, and keeps the
+      # repository active so GitHub does not disable the schedule for inactivity.
+      - name: Record the run
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add guide.xml.gz
+          git add status.json
           git diff --quiet --cached && echo "no change" && exit 0
           git commit -m "EPG $(date -u +%Y-%m-%d)"
           git push
