@@ -1,10 +1,11 @@
-// Builds one merged EPG file whose channel ids match your provider's, so
-// TiviMate picks everything up with no per-channel mapping.
+// Builds one merged XMLTV guide whose channel ids match my provider's, so
+// TiviMate fills the grid with no per-channel mapping. Five matching passes,
+// in falling order of confidence — the README explains why each one exists.
 //
 // Local:  XTREAM_HOST=... XTREAM_USER=... XTREAM_PASS=... node build-epg.mjs
 // CI:     driven by .github/workflows/build-epg.yml
 //
-// No dependencies. Node 18+.
+// No dependencies. Needs Node 18 or newer; CI runs 22.
 
 import { writeFileSync } from "node:fs";
 import { gunzipSync, gzipSync } from "node:zlib";
@@ -25,7 +26,7 @@ const IPTVEPG = "https://iptv-epg.org/files/epg-";
 
 // Order matters: the first source to claim a channel wins.
 // `passthrough` keeps unmatched channels as-is, which the Icelandic guide
-// needs because its ids are already your channel names.
+// needs because its ids are already my channel names.
 // `borrow` lets a source also serve another country's entries.
 const SOURCES = [
   // Ids already in my provider's vocabulary ("AnimalPlanet.is"), and it runs
@@ -161,8 +162,10 @@ const providerCc = (ch) => {
   return prefix ? prefix[1].toLowerCase() : ccOf(ch.epg_channel_id ?? "");
 };
 
-// Six lookups for matching, plus the provider names to emit for rows that have
-// no id and the country each id belongs to.
+// Builds every lookup the passes below need, in one walk of the provider's
+// channel list. Five of them match a source channel to a provider id; `aliases`
+// holds the names of rows that have no id at all, and `targetCc` remembers
+// which country each id belongs to.
 const buildIndex = (channels) => {
   const byId = new Map();
   const byName = new Map();
@@ -234,8 +237,8 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
   const { byId, byName, byBase, byScoped, byScopedBase, aliases, targetCc } = index;
   const withData = channelsWithData(xml);
 
-  // Labels and ids are read once here; the passes below walk this list six
-  // times and re-scanning each element that often was pure waste.
+  // Labels and ids are read once here, because everything below walks this
+  // list five more times and re-parsing each element that often was pure waste.
   const elements = [];
   for (const [element] of xml.matchAll(CHANNEL)) {
     const sourceId = attr(element, "id");
@@ -271,7 +274,7 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
     );
   }
 
-  // Pass 2: quality-suffix fallback.
+  // Pass 2: feed-variant fallback, so "RUV 2 HD" can feed "RUV 2 FHD".
   for (const { sourceId, names } of elements) {
     take(
       sourceId,
@@ -294,8 +297,10 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
     }
   }
 
-  // TiviMate's last resort is the channel name against a <display-name>, so
-  // carry my provider's own names for the rows that have no id to match on.
+  // Pass 4: rows with an empty id can never match on TiviMate's first step, but
+  // its third step compares the channel name against <display-name> — so the
+  // guide carries my provider's own names for them. Country-scoped like pass 3,
+  // or the Vietnamese Animal Planet would collect a Nordic schedule.
   const aliasNames = (labels, cc) => {
     const names = new Set();
     if (!cc) return names;
@@ -308,16 +313,17 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
     return names;
   };
 
-  // Channels nothing has claimed, emitted under their own id: either because a
-  // row with no id wants them by name, or because this source is passthrough.
+  // Whatever is still unclaimed, emitted under its own id — the id is
+  // irrelevant here, since these are matched by name. Either a row with no id
+  // wants this channel, or the source is passthrough and keeps everything.
   for (const { sourceId, labels } of elements) {
     if (resolved.has(sourceId)) continue;
     const wanted = [ccOf(sourceId), borrow].some((cc) => aliasNames(labels, cc).size);
     if (wanted || passthrough) resolved.set(sourceId, new Set([sourceId]));
   }
 
-  // Scoped to the country of the id being emitted, so a schedule never reaches
-  // a same-named channel in another market.
+  // Scoped to the country of the id being emitted, not of the source channel,
+  // so a schedule never reaches a same-named channel in another market.
   const withAliases = (element, labels, target) => {
     const names = aliasNames(labels, targetCc.get(target) ?? ccOf(target));
     if (!names.size) return element;
@@ -352,11 +358,12 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
   return { channels, programmes };
 };
 
-// My provider names its per-event channels after the event itself: "[Livey]
-// (9/9) 16:35 Aalborg Handbold - Paris Saint-Germain". No guide will ever carry
-// those, and they have no id to match on — but the name already IS the
-// schedule, so read it back out. The end time is the one thing the name does
-// not give, hence a fixed block.
+// Pass 5: my provider names its per-event channels after the event itself —
+// "[Livey] (9/9) 16:35 Aalborg Handbold - Paris Saint-Germain" — and gives them
+// no id. No guide will ever carry those, but the name already IS the schedule,
+// so read it back out. This is the only place the output contains programmes no
+// source published; they are the provider's own strings, reshaped. The end time
+// is the one thing the name does not give, hence a fixed block.
 const EVENT_NAME = /^\[(?:[^\]]+)\]\s*\((\d{1,2})\/(\d{1,2})\)\s*(\d{1,2}):(\d{2})\s+(\S.*)$/;
 const EVENT_HOURS = 3;
 

@@ -1,8 +1,10 @@
-// Refuses to publish a guide that would empty the grid, and records what was
-// published in status.json.
+// The publish gate. Refuses a guide that would empty the grid, and records what
+// was published in status.json — which the next run reads back as its baseline,
+// so the per-source check below needs no thresholds kept up to date.
 //
 // Exits non-zero so the workflow stops and leaves the last good release in
-// place. A failure here is the signal that an upstream changed.
+// place. A failure here is the signal that an upstream changed, not that the
+// grid is broken: viewers keep yesterday's guide until it is fixed.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
@@ -13,7 +15,7 @@ const MIN_CHANNELS = 300;
 const MIN_PROGRAMMES = 20_000;
 const MIN_HOURS_AHEAD = 24;
 // A source that was carrying this many channels and now carries none has not
-// shrunk, it has broken.
+// shrunk, it has broken. Below this, normal churn could explain it.
 const HEALTHY_SOURCE = 20;
 
 const GUIDE = "guide.xml.gz";
