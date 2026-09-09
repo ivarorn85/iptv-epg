@@ -1,9 +1,9 @@
 {
-  "built": "2026-09-09T22:33:34.656Z",
-  "channels": 1512,
-  "programmes": 78232,
+  "built": "2026-09-09T22:43:59.397Z",
+  "channels": 1505,
+  "programmes": 77502,
   "scheduleRunsTo": "2026-10-31T17:00:00.000Z",
-  "gzipBytes": 7971562,
+  "gzipBytes": 7979016,
   "sources": {
     "Iceland extra": 21,
     "Iceland": 10,
@@ -15,6 +15,6 @@
     "Denmark": 59,
     "Norway": 4,
     "Sweden": 81,
-    "Events": 865
+    "Events": 858
   }
 }
