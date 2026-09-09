@@ -15,23 +15,53 @@ rewrites the guide's ids to the provider's so matching succeeds on step one.
 
 ## Matching rules
 
-Applied in two passes so a loose match can never steal a channel that something
-else matches precisely.
+Applied in three passes so a loose match can never steal a channel that
+something else matches precisely.
 
 **Pass 1, exact:**
 
 1. Normalised `epg_channel_id` — strip `.`, spaces, `_`, `-`, lowercase, keep the
    country suffix. `BBC.Four.HD.uk` and `BBC Four HD.uk` both become `bbcfourhd|uk`.
+   epgshare splits large countries across numbered files and suffixes their ids
+   to match, so the trailing ordinal in `.us2` is dropped — it names the file,
+   not the country.
 2. Normalised channel name — strip everything that isn't a letter or digit,
    lowercase. `IS: RUV FHD` becomes `isruvfhd`. Icelandic characters are kept.
+   `+` survives as the word `plus`, because it is the only thing separating
+   `TV3+` from `TV3`.
 3. Same, against each `<display-name>` in the source.
 
 **Pass 2, quality-suffix fallback:** drops a trailing `hd`, `fhd`, `uhd`, `sd` or
 `4k`. This is what makes guide3's `IS: RUV 2 HD` feed both `IS: RUV 2` and
 `IS: RUV 2 FHD`, which have no `HD` variant in my playlist.
 
+**Pass 3, country-scoped name:** my provider's ids come from a different vendor
+than epgshare's, so outside the UK the ids mostly do not overlap at all and the
+name is the only thing the two sides share:
+
+```
+UK: Sky Sport Main Event UHD 4K -> SkySpMainEvHD.uk    epgshare: Sky.Sports.Main.Event.HD.uk
+DK: DR 1 HD                     -> DR1 Denmark (DK,DA).dk
+SE: SVT 1 FHD                   -> SVT1 HD (T).se
+US: A&E HD                      -> AandE Network (East).us
+```
+
+So this pass strips the labelling each side adds — my provider's `US:` country
+prefix, epgshare's `[MTVSWHD]` headend codes, and feed annotations like
+`(DK,DA)`, `(T)` and `(East)` — and matches on what is left. The country is part
+of the key, so a UK channel can never claim the US entry of the same name. It
+also matches against the provider id's own body, which is often the better name
+carrier: `AandE Network (East).us` names the channel that `US: A&E HD` is.
+
+This pass is what makes everything outside the UK work. Without it, US, Denmark,
+Norway and Sweden all matched zero channels.
+
 One source channel can fan out to several provider channels. `5.USA.uk` feeds
 both `5 USA.uk` and `5USA.uk`.
+
+Conversely, my provider gives every quality variant of a channel the same
+`epg_channel_id`, so `IS: RUV FHD` and `IS: RUV` both resolve to `RUV.is` and the
+duplicate is dropped. One `<channel id="RUV.is">` serves all three rows.
 
 Channels with an empty `epg_channel_id` can never match anything. In my playlist
 that is about 70% of the list: Simmin Event 1-40, Viaplay Event 35-50, V Sport
@@ -40,10 +70,10 @@ a published schedule, so this is correct rather than a gap.
 
 ## Sources
 
-| Source | Coverage | Notes |
-| --- | --- | --- |
-| is-epg.run.place `guide3.xml` | Iceland, 14 channels | Ids already in `IS: RUV FHD` form |
-| epgshare01 | UK, US, US sports, DK, NO, SE | Ready-made per-country files, updated daily |
+| Source                        | Coverage                      | Notes                                       |
+| ----------------------------- | ----------------------------- | ------------------------------------------- |
+| is-epg.run.place `guide3.xml` | Iceland, 14 channels          | Ids already in `IS: RUV FHD` form           |
+| epgshare01                    | UK, US, US sports, DK, NO, SE | Ready-made per-country files, updated daily |
 
 Order matters: the first source to claim a channel wins, and Iceland is first
 because that file is purpose-built for this playlist.
@@ -62,6 +92,25 @@ Deliberately excluded: `epg_ripper_ALL_SOURCES1` (199 MB, chokes TiviMate) and
 a scraper that hits hundreds of broadcaster sites per run, too slow and fragile
 for a scheduled job.
 
+### Expected match counts
+
+Baseline from a verified run, for comparing against the log after a rebuild. A
+source dropping sharply means its upstream changed its id or naming scheme.
+
+| Source    | Channels | Note                                                   |
+| --------- | -------- | ------------------------------------------------------ |
+| Iceland   | 11       | 14 source channels, 3 are duplicate ids, 1 passthrough |
+| UK        | 160      |                                                        |
+| US        | 139      |                                                        |
+| US sports | 0        | provider carries no MILB feeds with ids                |
+| Denmark   | 54       |                                                        |
+| Norway    | 2        | epgshare's `.no` ids embed the country as a word       |
+| Sweden    | 84       |                                                        |
+
+450 channels and ~47,000 programmes, 4.3 MB gzipped. `US sports` and `Norway`
+earn almost nothing and could be dropped from `SOURCES`; they are kept because
+they cost only download time and may improve upstream.
+
 ## Setup
 
 1. Create a **public** repo (public so TiviMate can read the raw file without a
@@ -75,11 +124,11 @@ for a scheduled job.
 
 2. Add repository secrets under Settings, Secrets and variables, Actions:
 
-   | Secret | Example |
-   | --- | --- |
+   | Secret        | Example                                       |
+   | ------------- | --------------------------------------------- |
    | `XTREAM_HOST` | `http://example.com:8080` (no trailing slash) |
-   | `XTREAM_USER` | username |
-   | `XTREAM_PASS` | password |
+   | `XTREAM_USER` | username                                      |
+   | `XTREAM_PASS` | password                                      |
 
    Secrets are never written to the output. The published guide contains only
    channel ids and programme data.

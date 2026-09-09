@@ -29,18 +29,45 @@ const SOURCES = [
 
 const OUT = "guide.xml.gz";
 
-// "BBC.Four.HD.uk" and "BBC Four HD.uk" both collapse to "bbcfourhd|uk"
+// "BBC.Four.HD.uk" and "BBC Four HD.uk" both collapse to "bbcfourhd|uk".
+// The ordinal in epgshare's split-country files (".us2") is part of the file
+// name, not of the country, so it must not end up inside the body.
 const idKey = (id) => {
-  const m = /^(.*)\.([a-z]{2})$/.exec(id);
+  const m = /^(.*)\.([a-z]{2})\d?$/.exec(id);
   const [body, cc] = m ? [m[1], m[2]] : [id, ""];
   return `${body.replace(/[.\s_-]/g, "").toLowerCase()}|${cc}`;
 };
 
-// "IS: RUV FHD" -> "isruvfhd"
-const nameKey = (name) => name.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+const ccOf = (id) => idKey(id).split("|")[1];
+
+// "IS: RUV FHD" -> "isruvfhd". "+" becomes a word rather than vanishing,
+// because it is the only thing that tells "TV3+" from "TV3".
+const nameKey = (name) =>
+  name.replace(/\+/g, "plus").replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
 
 // "IS: RUV 2 HD" -> "isruv2", so it also matches "IS: RUV 2" and "IS: RUV 2 FHD"
 const baseKey = (name) => nameKey(name).replace(/(fhd|uhd|hd|sd|4k)$/, "");
+
+// The two sides label the same channel differently and neither is wrong: my
+// provider prefixes the country ("US: TBS HD"), epgshare prefixes a headend
+// code ("[MTVSWHD] MTV HD") and suffixes a feed annotation ("DR1 Denmark
+// (DK,DA)", "AandE Network (East)", "SVT1 HD (T)").
+const bare = (text) =>
+  text
+    .replace(/^[A-Za-z0-9]{2,4}\s*:\s*/, "")
+    .replace(/\[[^\]]*\]/g, "")
+    .replace(/\([^)]*\)/g, "");
+
+// Country is part of the key, so a UK channel can never claim the US entry of
+// the same name.
+const scopedKey = (cc, text) => {
+  const key = nameKey(bare(text));
+  return key ? `${cc}|${key}` : "";
+};
+const scopedBaseKey = (cc, text) => {
+  const key = baseKey(bare(text));
+  return key ? `${cc}|${key}` : "";
+};
 
 const escapeAttr = (s) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
@@ -73,11 +100,20 @@ const loadChannels = async () => {
   return res.json();
 };
 
-// Three lookups, tried in order of confidence.
+// My provider states the country in the channel name; fall back to the id for
+// the rows that don't carry a prefix.
+const providerCc = (ch) => {
+  const prefix = /^([A-Za-z]{2})\s*:/.exec(ch.name ?? "");
+  return prefix ? prefix[1].toLowerCase() : ccOf(ch.epg_channel_id);
+};
+
+// Five lookups, tried in order of confidence.
 const buildIndex = (channels) => {
   const byId = new Map();
   const byName = new Map();
   const byBase = new Map();
+  const byScoped = new Map();
+  const byScopedBase = new Map();
   const add = (map, key, value) => {
     if (!key) return;
     if (!map.has(key)) map.set(key, new Set());
@@ -91,9 +127,17 @@ const buildIndex = (channels) => {
     if (ch.name) {
       add(byName, nameKey(ch.name), target);
       add(byBase, baseKey(ch.name), target);
+
+      // Index the id's own body too — it is often the better name carrier,
+      // "AandE Network (East).us" naming the channel that "US: A&E HD" is.
+      const cc = providerCc(ch);
+      for (const label of [ch.name, target.replace(/\.[a-z]{2}\d?$/, "")]) {
+        add(byScoped, scopedKey(cc, label), target);
+        add(byScopedBase, scopedBaseKey(cc, label), target);
+      }
     }
   }
-  return { byId, byName, byBase };
+  return { byId, byName, byBase, byScoped, byScopedBase };
 };
 
 const CHANNEL = /<channel\b[^>]*?>[\s\S]*?<\/channel>|<channel\b[^>]*?\/>/g;
@@ -103,7 +147,7 @@ const DISPLAY_NAME = /<display-name[^>]*>([\s\S]*?)<\/display-name>/g;
 const displayNames = (element) =>
   [...element.matchAll(DISPLAY_NAME)].map((m) => m[1].trim());
 
-const convert = (xml, { byId, byName, byBase }, passthrough) => {
+const convert = (xml, { byId, byName, byBase, byScoped, byScopedBase }, passthrough) => {
   const elements = [...xml.matchAll(CHANNEL)]
     .map(([element]) => ({ element, sourceId: attr(element, "id") }))
     .filter((c) => c.sourceId);
@@ -133,8 +177,32 @@ const convert = (xml, { byId, byName, byBase }, passthrough) => {
     if (targets.size) {
       resolved.set(sourceId, targets);
       for (const t of targets) claimed.add(t);
-    } else if (passthrough) {
-      resolved.set(sourceId, new Set([sourceId]));
+    }
+  }
+
+  // Pass 3: my provider's ids come from a different vendor than epgshare's, so
+  // for most countries the name is the only thing the two sides share. Country
+  // is part of the key, so this cannot match across countries.
+  for (const { element, sourceId } of elements) {
+    if (resolved.has(sourceId)) continue;
+    const cc = ccOf(sourceId);
+    if (!cc) continue;
+    let loose;
+    for (const label of [sourceId.replace(/\.[a-z]{2}\d?$/, ""), ...displayNames(element)]) {
+      loose = byScoped.get(scopedKey(cc, label)) ?? byScopedBase.get(scopedBaseKey(cc, label));
+      if (loose) break;
+    }
+    const targets = new Set([...(loose ?? [])].filter((t) => !claimed.has(t)));
+    if (targets.size) {
+      resolved.set(sourceId, targets);
+      for (const t of targets) claimed.add(t);
+    }
+  }
+
+  // Passthrough runs last so every match has had its chance first.
+  if (passthrough) {
+    for (const { sourceId } of elements) {
+      if (!resolved.has(sourceId)) resolved.set(sourceId, new Set([sourceId]));
     }
   }
 
