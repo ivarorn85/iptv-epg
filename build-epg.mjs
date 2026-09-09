@@ -62,8 +62,23 @@ const ccOf = (id) => idKey(id).split("|")[1];
 const nameKey = (name) =>
   name.replace(/\+/g, "plus").replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
 
-// "IS: RUV 2 HD" -> "isruv2", so it also matches "IS: RUV 2" and "IS: RUV 2 FHD"
-const baseKey = (name) => nameKey(name).replace(/(fhd|uhd|hd|sd|4k)$/, "");
+// "IS: RUV 2 HD" -> "isruv2", so it also matches "IS: RUV 2" and "IS: RUV 2 FHD".
+// Feed variants stack up in my provider's names and have to come off together:
+// "Sky Sport Main Event UHD 4K B", "TNT Sports 1 FHD P50", "BBC One HDR 4K".
+// The trailing A/B is a backup feed, and my provider writes "Sky Sport" where
+// epgshare writes "Sky Sports".
+const VARIANT = /(fhd|uhd|hd|sd|4k|hdr|p50|2160p|1080p)$/;
+
+const baseKey = (name) => {
+  let key = nameKey(name).replace(/sports/g, "sport");
+  if (/(fhd|uhd|hd|sd|4k|hdr|p50)[ab]$/.test(key)) key = key.slice(0, -1);
+  for (let pass = 0; pass < 4; pass++) {
+    const shorter = key.replace(VARIANT, "");
+    if (shorter === key || !shorter) break;
+    key = shorter;
+  }
+  return key;
+};
 
 // The two sides label the same channel differently and neither is wrong: my
 // provider prefixes the country ("US: TBS HD"), epgshare prefixes a headend
@@ -186,13 +201,35 @@ const DISPLAY_NAME = /<display-name[^>]*>([\s\S]*?)<\/display-name>/g;
 const displayNames = (element) =>
   [...element.matchAll(DISPLAY_NAME)].map((m) => m[1].trim());
 
+const TITLE = /<title[^>]*>([\s\S]*?)<\/title>/;
+
+// iptv-epg.org fills channels it has no schedule for with hourly filler. Left
+// alone it is worse than an empty channel: it claims the id, so no other source
+// can serve it and my provider's own EPG never shows through either.
+const PLACEHOLDER = /^(no data|no event today|no information|no programme|tba|to be announced|n\/a|-)$/i;
+
+const isPlaceholder = (element) => PLACEHOLDER.test((TITLE.exec(element) ?? [])[1]?.trim() ?? "");
+
+// Source channels carrying at least one real programme. Anything else must not
+// claim a target.
+const channelsWithData = (xml) => {
+  const withData = new Set();
+  for (const [element] of xml.matchAll(PROGRAMME)) {
+    if (isPlaceholder(element)) continue;
+    const channel = attr(element, "channel");
+    if (channel) withData.add(channel);
+  }
+  return withData;
+};
+
 const bodyOf = (sourceId) => sourceId.replace(/\.[a-z]{2}\d?$/, "");
 
 const convert = (xml, index, { passthrough, borrowIcelandic } = {}) => {
   const { byId, byName, byBase, byScoped, byScopedBase, byIcelandic, aliases, targetCc } = index;
+  const withData = channelsWithData(xml);
   const elements = [...xml.matchAll(CHANNEL)]
     .map(([element]) => ({ element, sourceId: attr(element, "id") }))
-    .filter((c) => c.sourceId);
+    .filter((c) => c.sourceId && withData.has(c.sourceId));
 
   const resolved = new Map(); // source id -> Set of target ids
   const claimed = new Set();
@@ -313,6 +350,7 @@ const convert = (xml, index, { passthrough, borrowIcelandic } = {}) => {
 
   const programmes = [];
   for (const [element] of xml.matchAll(PROGRAMME)) {
+    if (isPlaceholder(element)) continue;
     const targets = resolved.get(attr(element, "channel"));
     if (!targets) continue;
     for (const target of targets)

@@ -31,9 +31,16 @@ something else matches precisely.
    `TV3+` from `TV3`.
 3. Same, against each `<display-name>` in the source.
 
-**Pass 2, quality-suffix fallback:** drops a trailing `hd`, `fhd`, `uhd`, `sd` or
-`4k`. This is what makes guide3's `IS: RUV 2 HD` feed both `IS: RUV 2` and
-`IS: RUV 2 FHD`, which have no `HD` variant in my playlist.
+**Pass 2, quality-suffix fallback:** drops trailing feed variants. This is what
+makes guide3's `IS: RUV 2 HD` feed both `IS: RUV 2` and `IS: RUV 2 FHD`, which
+have no `HD` variant in my playlist.
+
+They stack, so they come off in a loop: `hd` `fhd` `uhd` `sd` `4k` `hdr` `p50`
+`2160p` `1080p`, plus a trailing `A`/`B` backup-feed letter when a variant
+precedes it. That is what reaches `Sky Sport Main Event UHD 4K B` and
+`TNT Sports 1 FHD P50`. My provider also writes "Sky Sport" where epgshare
+writes "Sky Sports", so `sports` folds to `sport` in this key only — the exact
+key of pass 1 stays strict.
 
 **Pass 3, country-scoped name:** my provider's ids come from a different vendor
 than epgshare's, so outside the UK the ids mostly do not overlap at all and the
@@ -255,6 +262,18 @@ the `extra` sources above. `epg-us` is 500 MB uncompressed, within 3% of the
 largest string Node can hold, so `fetchSource` checks the size and reports it
 plainly; the day it outgrows the ceiling it becomes a skipped source and the
 build carries on without it.
+
+### Placeholder programmes
+
+iptv-epg.org fills channels it has no schedule for with hourly `No Data`
+programmes, and its sports feeds with `No EVENT Today`. That is worse than an
+empty channel: the filler claims the id, so no other source can serve it and my
+provider's own EPG never shows through either — `UK: Sky Cinema Animation HD`
+showed "No Data" in TiviMate while a real schedule existed upstream.
+
+So a source channel whose every programme is filler claims nothing, and filler
+programmes are dropped on the way out. That is 1,248 junk entries and 40
+channels handed back to the provider's EPG.
 
 ### Are the Icelandic guides right?
 
