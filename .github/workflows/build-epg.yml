@@ -2,8 +2,15 @@ name: Build EPG
 
 on:
   schedule:
-    # epgshare01 regenerates around 05:30 UTC, so run after it.
-    - cron: "15 6 * * *"
+    # epgshare01 regenerates around 05:30 UTC, so the morning slot runs after
+    # it. The afternoon one is a backup: GitHub's scheduler is best-effort and
+    # both delays and outright skipped occurrences are normal, so a single slot
+    # a day means a missed slot is a missed day. Republishing is harmless —
+    # the gate and the release upload are both idempotent.
+    #
+    # Odd minutes on purpose: the top of the hour is when the queue is worst.
+    - cron: "17 6 * * *"
+    - cron: "43 14 * * *"
   workflow_dispatch:
 
 permissions:
