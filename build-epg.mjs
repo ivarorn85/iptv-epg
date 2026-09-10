@@ -19,7 +19,7 @@ import {
   isPlaceholder,
   mb,
 } from "./epg-xml.mjs";
-import { eventGuide } from "./events.mjs";
+import { EVENT_NAME, eventGuide } from "./events.mjs";
 import { ruvGuide, synGuide } from "./iceland.mjs";
 import { baseKey, bodyOf, ccOf, idKey, nameKey, scopedBaseKey, scopedKey } from "./keys.mjs";
 
@@ -131,6 +131,13 @@ const buildIndex = (channels) => {
   const byScopedBase = new Map();
   const aliases = new Map();
   const targetCc = new Map();
+  // A row with no id, next to a row with one that normalises to the same name,
+  // is the same channel packaged differently — a backup feed, a P50 variant, an
+  // app duplicate. My provider says so itself by naming them alike, so the
+  // id-less one is advertised on the channel its sibling already reaches.
+  const donors = new Map();
+  const orphans = [];
+  const inherited = new Map();
   const add = (map, key, value) => {
     if (!key) return;
     if (!map.has(key)) map.set(key, new Set());
@@ -148,6 +155,8 @@ const buildIndex = (channels) => {
       if (ch.name) {
         add(aliases, scopedKey(cc, ch.name), ch.name);
         add(aliases, scopedBaseKey(cc, ch.name), ch.name);
+        // Per-event channels are the event pass's job, not a sibling's.
+        if (!EVENT_NAME.test(ch.name)) orphans.push(ch);
       }
       continue;
     }
@@ -155,6 +164,8 @@ const buildIndex = (channels) => {
     targetCc.set(target, cc);
     add(byId, idKey(target), target);
     if (!ch.name) continue;
+    const sibling = scopedBaseKey(cc, ch.name);
+    if (sibling && !donors.has(sibling)) donors.set(sibling, target);
     add(byName, nameKey(ch.name), target);
     add(byBase, baseKey(ch.name), target);
 
@@ -165,7 +176,12 @@ const buildIndex = (channels) => {
       add(byScopedBase, scopedBaseKey(cc, label), target);
     }
   }
-  return { byId, byName, byBase, byScoped, byScopedBase, aliases, targetCc };
+  for (const ch of orphans) {
+    const donor = donors.get(scopedBaseKey(providerCc(ch), ch.name));
+    if (donor) add(inherited, donor, ch.name);
+  }
+
+  return { byId, byName, byBase, byScoped, byScopedBase, aliases, targetCc, inherited };
 };
 
 // Source channels carrying at least one real programme. Anything else must not
@@ -191,7 +207,7 @@ const firstHit = (labels, lookup) => {
 };
 
 const convert = (xml, index, { passthrough, borrow } = {}) => {
-  const { byId, byName, byBase, byScoped, byScopedBase, aliases, targetCc } = index;
+  const { byId, byName, byBase, byScoped, byScopedBase, aliases, targetCc, inherited } = index;
   const withData = channelsWithData(xml);
 
   // Labels and ids are read once here, because everything below walks this
@@ -286,6 +302,7 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
   const withAliases = (element, labels, target) => {
     const names = aliasNames(labels, targetCc.get(target) ?? ccOf(target));
     for (const name of ALSO_KNOWN_AS[target] ?? []) names.add(name);
+    for (const name of inherited.get(target) ?? []) names.add(name);
     if (!names.size) return element;
     const extra = [...names].map((n) => `\n    <display-name>${escapeAttr(n)}</display-name>`).join("");
     return element.endsWith("/>")

@@ -18,7 +18,7 @@ import { nameKey } from "./keys.mjs";
 
 const HOUR_MS = 3_600_000;
 
-const EVENT_NAME = /^\[(?:[^\]]+)\]\s*\((\d{1,2})\/(\d{1,2})\)\s*(\d{1,2}):(\d{2})\s+(\S.*)$/;
+export const EVENT_NAME = /^\[(?:[^\]]+)\]\s*\((\d{1,2})\/(\d{1,2})\)\s*(\d{1,2}):(\d{2})\s+(\S.*)$/;
 
 // The name gives no end time.
 const ASSUMED_HOURS = 3;

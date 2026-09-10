@@ -172,6 +172,24 @@ some 45 other services that name channels the same way. `IS: Sýn Besta Deildin 
 and friends are **not** reachable this way — those names carry no fixture or
 time.
 
+### Rows with no id, filled by a sibling
+
+A row with no `epg_channel_id`, sitting next to a row that has one and whose
+name normalises the same way, is the same channel packaged differently. My
+provider says so itself by naming them alike:
+
+```
+UK: Sky Sport 1 UHD 4K B      <- UK: Sky Sport 1 UHD 4K        SkySp F1 HD.uk
+UK: TNT Sports 1 FHD P50      <- UK: TNT Sports 1 FHD          TNT Sports 1.uk
+UK: Sky Sport Golf (SkyGo)    <- UK: Sky Sport Golf FHD P50    SkySp Golf HD.uk
+SE: V Series FHD              <- SE: V Series HD               V series HD (T).se
+```
+
+So the id-less row's name is advertised on the channel its sibling already
+reaches — backup feeds, P50 variants and app duplicates all resolve without a
+single hand-written mapping. That is 319 rows. Per-event channels are excluded,
+being the event pass's job.
+
 ### The one manual list
 
 `ALSO_KNOWN_AS` in `build-epg.mjs` maps a provider id to extra channel names
@@ -328,9 +346,25 @@ before assuming the matching is at fault. The id lists open in a browser:
 https://epgshare01.online/epgshare01/epg_ripper_UK1.txt
 ```
 
-Some gaps are genuinely the source's: UK1 carries no Eurosport and no Sky Sports
-F1 at all, and only regional `BBC.One.Yorks.HD.uk`-style variants rather than a
-plain BBC One. Others cannot exist — `Sky Sport 1 UHD 4K` and `BBC One HDR 4K`
+Some gaps are genuinely the source's, and some channels are simply gone:
+
+- **UK Eurosport 1 and 2** are in the playlist with ids, but no UK source
+  publishes them — UK1 has no Eurosport at all and epg-gb has only 3-9. Both do
+  publish TNT Sports, which is where Eurosport UK's content went. The rows look
+  stale. The Danish and Swedish Eurosport feeds do have data, but that is
+  another market's schedule, so they are deliberately not borrowed.
+- **`UK: Sky Sport 2 UHD 4K`** has no id and no sibling with one, so nothing
+  says what it is. There has been no linear "Sky Sports 2" for years.
+- **`Sky Sport 1 UHD 4K`** works only because my provider mapped it to
+  `SkySp F1 HD.uk` itself.
+- **Rotating 4K event feeds** have no fixed schedule at all; pointing them at
+  the HD channel would show programmes that are not on.
+- **Skjár 1** publishes no schedule. Its dagskrá page is a policy statement —
+  films with Icelandic subtitles at 5, 7, 9 and 11 daily — with no titles
+  anywhere. Synthesising "Kvikmynd" blocks would be the same filler this build
+  strips out of iptv-epg.org.
+- UK1 also carries no Sky Sports F1, and only regional
+  `BBC.One.Yorks.HD.uk`-style variants rather than a plain BBC One. Others cannot exist — `Sky Sport 1 UHD 4K` and `BBC One HDR 4K`
 are rotating 4K event feeds with no fixed schedule, and pointing them at the HD
 channel would show programmes that are not on.
 
