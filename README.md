@@ -382,6 +382,10 @@ Some gaps are genuinely the source's, and some channels are simply gone:
   another market's schedule, so they are deliberately not borrowed.
 - **`UK: Sky Sport 2 UHD 4K`** has no id and no sibling with one, so nothing
   says what it is. There has been no linear "Sky Sports 2" for years.
+- **`UK: 4Music`** is a dead channel: iptv-org's database records it closed on
+  2024-07-01, which is why nothing publishes a schedule. Several other
+  unfillable ids — `Eurosport1.uk`, `amc.uk`, `bbc1.uk`, `motorstv.uk` — are
+  not in that database at all, being my provider's own invented ids.
 - **`Sky Sport 1 UHD 4K`** works only because my provider mapped it to
   `SkySp F1 HD.uk` itself.
 - **Rotating 4K event feeds** have no fixed schedule at all; pointing them at
@@ -423,7 +427,8 @@ Checked against the real playlist, so none of this needs re-testing.
 | `BEIN1` `DIRECTVSPORTS1` `ALJAZEERA1` | 0 matches each.                                                                                                                                                                            |
 | `RAKUTEN1`                            | 10 rows for a 9.2 MB download.                                                                                                                                                             |
 | `IE1`                                 | 2 rows. Ireland, not Iceland.                                                                                                                                                              |
-| iptv-org/epg                          | A scraper that hits hundreds of broadcaster sites per run. Too slow and too fragile for a scheduled job.                                                                                   |
+| iptv-org/epg | 251 site scrapers, and they emit *iptv-org* ids rather than my provider's, which is the whole job here. Its `ruv.is` grabber uses the same GraphQL endpoint as this build and its `syn.is` grabber the same API; its `sjonvarp.is` page is client-rendered and its channel map still lists Stöð 2, retired in 2025. |
+| iptv-org/api (channel database) | Measured: resolves **0** of the rows we miss. Its `alt_names` are good, but the bottleneck is source coverage rather than naming, and its canonical ids (`SVT1.se`) are a third vocabulary — adopting them would break matching against my provider's `tvg-id`. The `closed` field is useful for diagnosing dead channels, which is a one-off question, not a daily download. |
 | viaplay.is content API | Not usable as a source — start and end times but **no channel field at all**, so there is nothing to key XMLTV on. Its end times *are* borrowed for the event pass, below. |
 | framundanibeinni.is | Names a channel per fixture, but 228 of its 369 entries are `viaplay` or `livey`, which identify the *service* rather than which V Sport Live or `[Livey]` channel carries it. The rest is `syn*`/`ruv*`/`eurosport*`, already covered better — syn.is gives `synsportisland` 324 entries where this gives 4. |
 
