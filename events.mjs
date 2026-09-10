@@ -14,6 +14,7 @@
 // its own id and found by name.
 
 import { xmltvChannel, xmltvProgramme } from "./epg-xml.mjs";
+import { getJson } from "./http.mjs";
 import { nameKey } from "./keys.mjs";
 
 const HOUR_MS = 3_600_000;
@@ -66,7 +67,7 @@ const viaplayEnds = async (days) => {
   for (let day = 0; day < days; day++) {
     const date = new Date(Date.now() + day * 24 * HOUR_MS).toISOString().slice(0, 10);
     try {
-      const page = await (await fetch(`${VIAPLAY_SPORT}?date=${date}`)).json();
+      const page = await getJson(`${VIAPLAY_SPORT}?date=${date}`);
       const blocks = page._embedded?.["viaplay:blocks"] ?? [];
       collect(blocks);
 
@@ -75,7 +76,7 @@ const viaplayEnds = async (days) => {
       for (const block of blocks) {
         const href = block._links?.self?.href;
         for (let number = 2; href && number <= (block.pageCount ?? 1); number++) {
-          const more = await (await fetch(href.replace(/pageNumber=\d+/, `pageNumber=${number}`))).json();
+          const more = await getJson(href.replace(/pageNumber=\d+/, `pageNumber=${number}`));
           collect(more._embedded?.["viaplay:blocks"] ?? [more]);
         }
       }

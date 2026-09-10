@@ -32,6 +32,7 @@ TiviMate succeeds on step one and never has to guess.
    events.mjs           per-event channels read out of their own names
    keys.mjs             how a channel on one side is matched to the other
    epg-xml.mjs          shared XMLTV shapes and emitters
+   http.mjs             one place for the User-Agent and request timeouts
    check-guide.mjs      the publish gate
    README.md
    .gitignore
@@ -365,6 +366,13 @@ no threshold to maintain: `status.json` is the baseline and it updates itself.
 
 When a refusal happens the last good release stays up, so the grid keeps working
 while you look into it.
+
+One failure mode worth knowing, because it looks like something else: syn.is
+refuses Node's default User-Agent — the literal string `node` — by resetting
+the connection, which is indistinguishable from the site being down. Every
+request therefore goes through `http.mjs`, which sends an honest name and a
+timeout. If a source starts failing with a connection error rather than an
+HTTP status, suspect this before suspecting the source.
 
 If a single channel stays empty, check whether the upstream carries it at all
 before assuming the matching is at fault. The id lists open in a browser:

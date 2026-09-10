@@ -21,6 +21,7 @@ import {
   xmltvChannel,
 } from "./epg-xml.mjs";
 import { EVENT_NAME, eventGuide } from "./events.mjs";
+import { getJson, request } from "./http.mjs";
 import { ruvGuide, synGuide } from "./iceland.mjs";
 import { baseKey, bodyOf, ccOf, idKey, nameKey, scopedBaseKey, scopedKey } from "./keys.mjs";
 
@@ -87,8 +88,8 @@ const MAX_STRING = 0x1fffffe8;
 
 const fetchSource = async ({ url, build }) => {
   if (build) return build(); // assembled from a JSON API rather than fetched as XMLTV
-  const res = await fetch(url, { redirect: "follow" });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  // Generous, because one of these is a 59 MB download.
+  const res = await request(url, { timeoutMs: 180_000 });
   const buf = Buffer.from(await res.arrayBuffer());
   const raw = url.endsWith(".gz") ? gunzipSync(buf) : buf;
   if (raw.length > MAX_STRING) throw new Error(`${mb(raw.length, 0)} uncompressed, too big to parse`);
@@ -106,9 +107,11 @@ const loadChannels = async () => {
     `&password=${encodeURIComponent(XTREAM_PASS)}` +
     `&action=get_live_streams`;
 
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Xtream API: HTTP ${res.status}`);
-  return res.json();
+  try {
+    return await getJson(url);
+  } catch (err) {
+    throw new Error(`Xtream API: ${err.message}`);
+  }
 };
 
 // My provider states the country in the channel name; fall back to the id for

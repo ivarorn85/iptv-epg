@@ -10,6 +10,7 @@
 // malformed row must cost its own programme, never the whole source.
 
 import { xmltvChannel, xmltvProgramme } from "./epg-xml.mjs";
+import { getJson, request } from "./http.mjs";
 
 const HOUR_MS = 3_600_000;
 
@@ -21,7 +22,7 @@ const HORIZON_DAYS = 10;
 const SYN_API = "https://www.syn.is/api/epg";
 
 export const synGuide = async () => {
-  const stations = await (await fetch(SYN_API)).json();
+  const stations = await getJson(SYN_API);
   if (!Array.isArray(stations)) throw new Error("station list was not an array");
 
   const channels = [];
@@ -30,7 +31,7 @@ export const synGuide = async () => {
   for (const station of stations) {
     let events;
     try {
-      events = await (await fetch(`${SYN_API}/${station}`)).json();
+      events = await getJson(`${SYN_API}/${station}`);
       events = events.filter((event) => event?.upphaf && (event.isltitill || event.titill));
     } catch {
       continue; // one station being down is not the whole source failing
@@ -111,12 +112,12 @@ export const ruvGuide = async () => {
       const date = new Date(Date.now() + day * 24 * HOUR_MS).toISOString().slice(0, 10);
       let events;
       try {
-        const res = await fetch(RUV_GQL, {
+        const answer = await getJson(RUV_GQL, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ query: RUV_QUERY, variables: { channel, date } }),
         });
-        events = (await res.json())?.data?.Schedule?.events;
+        events = answer?.data?.Schedule?.events;
       } catch {
         continue;
       }
