@@ -2,7 +2,7 @@
 
 Builds one merged XMLTV guide whose channel ids already match my IPTV
 provider's, so TiviMate fills the grid on its own instead of needing hundreds of
-channels mapped by hand. A GitHub Action rebuilds it every morning and publishes
+channels mapped by hand. A GitHub Action rebuilds it twice a day and publishes
 it as a release asset; nothing needs touching in between.
 
 The numbers throughout are from my playlist. Anyone reusing this will get
@@ -333,6 +333,14 @@ The guide is uploaded as the asset of a fixed release tag, `epg`, and is not
 committed. The tag never moves, so the download URL is permanent, and the
 repository stays small instead of gaining 8 MB a day — committing it daily would
 have passed two gigabytes inside a year.
+
+It runs at 06:17 and 14:43 UTC. The second slot is insurance rather than need:
+GitHub's scheduler is best-effort and both delays and outright skipped
+occurrences are normal, so one slot a day means a missed slot is a missed day.
+The first cron here never fired at all — the repo was hours old at the time —
+which is exactly the failure the backup covers. Republishing costs nothing: the
+gate and the release upload are both idempotent, and odd minutes avoid the
+top-of-hour queue.
 
 `status.json` is the one thing committed each run: a few hundred bytes recording
 what was published and how many channels each source contributed. It doubles as
