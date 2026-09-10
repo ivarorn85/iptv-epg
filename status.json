@@ -1,9 +1,9 @@
 {
-  "built": "2026-09-10T10:13:09.249Z",
-  "channels": 1715,
-  "programmes": 80029,
+  "built": "2026-09-10T15:45:21.052Z",
+  "channels": 1703,
+  "programmes": 79507,
   "scheduleRunsTo": "2026-10-31T17:00:00.000Z",
-  "gzipBytes": 8343976,
+  "gzipBytes": 8262154,
   "sources": {
     "RÚV": 2,
     "Sýn": 13,
@@ -17,7 +17,7 @@
     "Denmark": 58,
     "Norway": 4,
     "Sweden": 81,
-    "Events": 1055,
+    "Events": 1043,
     "Timeshift": 6
   }
 }
