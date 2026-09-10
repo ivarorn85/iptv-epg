@@ -36,8 +36,16 @@ const BACKUP_FEED = new RegExp(`(${VARIANTS})[ab]$`);
 // "IS: RUV 2 HD" -> "isruv2", so it also matches "IS: RUV 2" and "IS: RUV 2 FHD".
 // My provider also writes "Sky Sport" where epgshare writes "Sky Sports", so
 // that folds here and not in the strict key above.
+// "BBC One" and "BBC 1" are one channel. Only a standalone word counts, or
+// Vodafone would fold to "vodaf1". This lives in the loose key alone, so exact
+// id and name matching is untouched.
+const NUMBER_WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+const NUMBER_WORD = new RegExp(`\\b(${NUMBER_WORDS.join("|")})\\b`, "gi");
+const asDigits = (text) =>
+  text.replace(NUMBER_WORD, (word) => String(NUMBER_WORDS.indexOf(word.toLowerCase()) + 1));
+
 export const baseKey = (name) => {
-  let key = nameKey(name).replace(/sports/g, "sport");
+  let key = nameKey(asDigits(name)).replace(/sports/g, "sport");
   if (BACKUP_FEED.test(key)) key = key.slice(0, -1);
   for (;;) {
     const shorter = key.replace(VARIANT, "");

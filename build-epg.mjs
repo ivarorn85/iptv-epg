@@ -18,6 +18,7 @@ import {
   escapeAttr,
   isPlaceholder,
   mb,
+  xmltvChannel,
 } from "./epg-xml.mjs";
 import { EVENT_NAME, eventGuide } from "./events.mjs";
 import { ruvGuide, synGuide } from "./iceland.mjs";
@@ -341,12 +342,80 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
   return { channels, programmes };
 };
 
+const HOUR_MS = 3_600_000;
+
+// A "+1" channel is its base channel an hour later, so where the base has a
+// schedule the +1 schedule is derivable rather than fetchable. My provider
+// writes it as a trailing "1" after a double space — "UK: FILM 4  1" — which
+// is how it differs from a channel number: "UK: Coral TV 2" has one space and
+// is a different channel, not a timeshift.
+const PLUS_ONE = /\s{2,}1$/;
+
+// Advances the wall clock an hour and keeps the original offset, which is the
+// same instant either way and leaves the stamp looking like its neighbours.
+const anHourLater = (stamp) => {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(.*)$/.exec(stamp);
+  if (!m) return stamp;
+  const [, year, month, day, hour, minute, second, zone] = m;
+  const at = new Date(Date.UTC(+year, +month - 1, +day, +hour, +minute, +second) + HOUR_MS);
+  const pad = (value) => String(value).padStart(2, "0");
+  return (
+    `${at.getUTCFullYear()}${pad(at.getUTCMonth() + 1)}${pad(at.getUTCDate())}` +
+    `${pad(at.getUTCHours())}${pad(at.getUTCMinutes())}${pad(at.getUTCSeconds())}${zone}`
+  );
+};
+
+// A "+1" row, built from the base channel's schedule moved an hour later.
+//
+// Copying a sibling's schedule wholesale to every other empty row was tried and
+// rejected: it filled 328 channels but added 37,000 duplicate programmes and
+// took the guide from 62 MB to 99 MB, nearly all of it rows for channels that
+// already had a schedule under a different id.
+const derivedGuide = (providerChannels, programmesByChannel) => {
+  const bases = new Map();
+  for (const ch of providerChannels) {
+    if (!ch.name || !programmesByChannel.has(ch.epg_channel_id)) continue;
+    const key = scopedBaseKey(providerCc(ch), ch.name);
+    if (key && !bases.has(key)) bases.set(key, ch.epg_channel_id);
+  }
+
+  const channels = [];
+  const programmes = [];
+  const taken = new Set();
+
+  for (const ch of providerChannels) {
+    if (!ch.name || !PLUS_ONE.test(ch.name)) continue;
+    if (programmesByChannel.has(ch.epg_channel_id)) continue; // has a schedule of its own
+    const base = bases.get(scopedBaseKey(providerCc(ch), ch.name.replace(PLUS_ONE, "")));
+    if (!base) continue;
+
+    // Matched by name, so the id only has to be unique. Namespaced separately
+    // from every other synthetic id, or a same-named row elsewhere takes it and
+    // this one is silently dropped.
+    const id = `plus1.${nameKey(ch.name)}`;
+    if (taken.has(id)) continue;
+    taken.add(id);
+
+    channels.push({ id, element: xmltvChannel(id, [ch.name]) });
+    for (const element of programmesByChannel.get(base))
+      programmes.push({
+        channel: id,
+        element: element
+          .replace(/\bstart="([^"]*)"/, (all, at) => `start="${anHourLater(at)}"`)
+          .replace(/\bstop="([^"]*)"/, (all, at) => `stop="${anHourLater(at)}"`)
+          .replace(/\bchannel="[^"]*"/, `channel="${escapeAttr(id)}"`),
+      });
+  }
+  return { channels, programmes };
+};
+
 const channels = await loadChannels();
 const index = buildIndex(channels);
 console.log(`provider: ${channels.length} channels, ${index.byId.size} distinct id keys\n`);
 
 const allChannels = [];
 const allProgrammes = [];
+const programmesByChannel = new Map();
 const counts = {};
 const seen = new Set();
 
@@ -361,7 +430,11 @@ const merge = (label, { channels: produced, programmes }) => {
     allChannels.push(element);
   }
   for (const { channel, element } of programmes) {
-    if (emitted.has(channel)) allProgrammes.push(element);
+    if (!emitted.has(channel)) continue;
+    allProgrammes.push(element);
+    // Kept per channel as well, so a "+1" channel can be built from its base.
+    if (!programmesByChannel.has(channel)) programmesByChannel.set(channel, []);
+    programmesByChannel.get(channel).push(element);
   }
   counts[label] = emitted.size;
   console.log(`${label}: matched ${emitted.size} channels`);
@@ -386,6 +459,9 @@ try {
 } catch (err) {
   console.error(`Events: skipped (${err.message})`);
 }
+
+// Last, because it copies from what every other source already produced.
+merge("Timeshift", derivedGuide(channels, programmesByChannel));
 
 const xml =
   '<?xml version="1.0" encoding="UTF-8"?>\n' +

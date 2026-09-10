@@ -190,6 +190,25 @@ reaches — backup feeds, P50 variants and app duplicates all resolve without a
 single hand-written mapping. That is 319 rows. Per-event channels are excluded,
 being the event pass's job.
 
+### "+1" channels, derived rather than fetched
+
+A "+1" channel is its base channel an hour later, so where the base has a
+schedule the +1 schedule does not need fetching. My provider writes it as a
+trailing "1" after a *double* space — `UK: FILM 4  1` — which is what separates
+it from a channel number: `UK: Coral TV 2` has one space and is a different
+channel. The base channel's programmes are copied with both timestamps moved an
+hour, keeping their original offset. That reaches `Film 4 +1`, `GOLD +1`,
+`TLC +1`, `More 4 +1`, `Alibi +1` and `5 Star +1`.
+
+Copying a sibling's schedule *unshifted* to every other empty row was tried and
+rejected. It filled 328 channels but added 37,000 duplicate programmes and took
+the guide from 62 MB to 99 MB, nearly all of it second rows for channels that
+already had a schedule under another id.
+
+`baseKey` also folds a standalone number word to its digit, so `BBC One` and
+`BBC 1` are one channel. Only a whole word counts — otherwise Vodafone would
+fold to `vodaf1`.
+
 ### The one manual list
 
 `ALSO_KNOWN_AS` in `build-epg.mjs` maps a provider id to extra channel names
