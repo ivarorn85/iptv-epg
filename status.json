@@ -1,22 +1,23 @@
 {
-  "built": "2026-09-10T00:08:43.908Z",
-  "channels": 1473,
-  "programmes": 77975,
+  "built": "2026-09-10T00:29:03.587Z",
+  "channels": 1482,
+  "programmes": 78775,
   "scheduleRunsTo": "2026-10-31T17:00:00.000Z",
-  "gzipBytes": 8009703,
+  "gzipBytes": 8115708,
   "sources": {
     "RÚV": 2,
     "Sýn": 13,
     "Iceland extra": 19,
     "Iceland": 4,
     "UK": 171,
-    "UK extra": 65,
+    "UK extra": 66,
     "US": 142,
     "US sports": 30,
     "US extra": 64,
     "Denmark": 59,
     "Norway": 4,
     "Sweden": 81,
-    "Events": 819
+    "Events": 821,
+    "Timeshift": 6
   }
 }
