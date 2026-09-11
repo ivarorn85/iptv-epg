@@ -444,7 +444,14 @@ The zero rule applies at any size, deliberately. It used to take 20 channels bef
 which left RÚV (2 channels), Iceland (4), Norway (4) and Timeshift (6) able to
 break silently and permanently — RÚV being both first-party and irreplaceable.
 The threshold was there to absorb transient fetch failures, and those no longer
-reach the gate: a source that fails keeps its count from cache. Three sources are exempt. `Events` is read from the playlist's current
+reach the gate: a source that fails keeps its count from cache. The same comparison covers the two soft counts — overlapping programmes, and
+rows a name could misdirect. Both are printed every run, which only helps if
+somebody reads it, so each is also compared against what the last run recorded
+and reported if it more than doubled and grew by at least twenty. That is the
+check that would have caught `is-epg`'s `guide.xml` pooling Sýn's channels onto
+one, or a marker being given an assumed length, without anyone thinking to look.
+
+Three sources are exempt. `Events` is read from the playlist's current
 fixtures and swings by hundreds between runs by design. `UK extra 2` and
 `US extra 2` are standbys that only take what the sources above them leave, so
 they are correctly empty while iptv-epg.org is healthy and carry 45 and 33

@@ -18,7 +18,7 @@
 // epgshare files the copy is empty of future programmes after two or three
 // days, so that, not the age bound below, is what ends the grace.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { gunzipSync, gzipSync } from "node:zlib";
 
 import { attr, parseTime } from "./epg-xml.mjs";
@@ -73,6 +73,26 @@ const read = (file) => {
   } catch {
     return null; // truncated, not gzip, or not the shape this module writes
   }
+};
+
+// Forgets the sources that are no longer in the list, so a file removed from
+// SOURCES stops being carried between runs for ever. Nothing reads it — load()
+// is keyed by label — but the Actions cache would keep hauling it around.
+export const forgetAllBut = (labels) => {
+  if (!existsSync(DIR)) return [];
+  const keep = new Set(labels.map(fileFor));
+  const dropped = [];
+  for (const file of readdirSync(DIR)) {
+    const path = `${DIR}/${file}`;
+    if (keep.has(path)) continue;
+    try {
+      rmSync(path);
+      dropped.push(file);
+    } catch {
+      /* leaving it costs only space */
+    }
+  }
+  return dropped;
 };
 
 // Returns what it stored, or null if it declined to. Declining is not an error:

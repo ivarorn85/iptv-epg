@@ -278,6 +278,11 @@ for (const source of SOURCES) {
   merge(label, produced);
 }
 
+// Now that every source has had its turn, forget the cached output of any that
+// is no longer in the list.
+const forgotten = cache.forgetAllBut(SOURCES.map((source) => source.label));
+if (forgotten.length) console.log(`cache: forgot ${forgotten.join(", ")}`);
+
 // Pass 5. Like the timeshift below it this skips convert() entirely: both
 // producers emit channels found by name, so there is no provider id to rewrite
 // and nothing to match. Guarded like the sources are, so a bad row here cannot

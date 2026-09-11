@@ -7,10 +7,10 @@ import { strict as assert } from "node:assert";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, before, describe, it } from "node:test";
+import { after, before, beforeEach, describe, it } from "node:test";
 import { gzipSync } from "node:zlib";
 
-import { load, save } from "../cache.mjs";
+import { forgetAllBut, load, save } from "../cache.mjs";
 
 // cache.mjs writes to "cache" relative to the working directory, so the tests
 // run in a scratch one and leave the real cache alone.
@@ -158,6 +158,35 @@ describe("save and load", () => {
       ],
     });
     assert.equal(load("US").programmes.length, 1);
+  });
+});
+
+describe("forgetAllBut", () => {
+  const good = { channels: [channel("A.uk")], programmes: [programme("A.uk", tomorrow())] };
+
+  // These assert on the whole directory, so each starts from an empty one.
+  beforeEach(() => rmSync("cache", { recursive: true, force: true }));
+
+  it("forgets a source that is no longer in the list", () => {
+    save("Still here", good);
+    save("Taken out", good);
+    const dropped = forgetAllBut(["Still here"]);
+
+    assert.ok(load("Still here"), "the surviving source keeps its copy");
+    assert.equal(load("Taken out"), null);
+    assert.equal(dropped.length, 1);
+  });
+
+  it("keeps every label it is given, however they are punctuated", () => {
+    save("RÚV", good);
+    save("US sports", good);
+    assert.deepEqual(forgetAllBut(["RÚV", "US sports"]), []);
+    assert.ok(load("RÚV"));
+    assert.ok(load("US sports"));
+  });
+
+  it("says nothing and throws nothing when there is no cache yet", () => {
+    assert.deepEqual(forgetAllBut(["Anything"]), []);
   });
 });
 

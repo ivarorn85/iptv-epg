@@ -228,6 +228,19 @@ for (const [label, before] of Object.entries(previous)) {
 // Reported every run, not just on the run it broke: once the baseline records
 // the zero, the transition above never fires again, and a source that stays
 // dead should keep saying so.
+// The two soft counts are reported every run, which only helps if somebody
+// looks. Compared against what the last run recorded, they report themselves:
+// a source that starts pooling channels onto one, the way is-epg's guide.xml
+// does, shows up as a jump in overlaps without any of the hard checks noticing.
+// Generous thresholds — doubled AND twenty worse — so ordinary upstream churn
+// stays quiet.
+const grew = (label, nowValue, before) => {
+  if (before === undefined || nowValue <= before * 2 || nowValue - before < 20) return;
+  regressions.push(`${label} went from ${before} to ${nowValue}`);
+};
+grew("programmes running into the next", overlapping, readJson(STATUS)?.overlapping);
+grew("rows a name could misdirect", ambiguous.length, readJson(STATUS)?.ambiguous?.length);
+
 const zeroed = Object.entries(counts)
   .filter(([label, now]) => now === 0 && !MAY_BE_EMPTY.has(label))
   .map(([label]) => label);
