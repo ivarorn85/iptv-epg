@@ -98,8 +98,13 @@ const viaplayEnds = async (days) => {
   return ends;
 };
 
-export const eventGuide = async (providerChannels) => {
-  const realEnds = await viaplayEnds(HORIZON_DAYS);
+// `realEnds` is the seam the tests use: pass a map and nothing is fetched. It
+// exists because the interesting logic here is the arithmetic below — reading a
+// date out of a name, and not emitting the same fixture twice — and a producer
+// that can only run with the network is a producer whose arithmetic is never
+// checked. Both of those have gone wrong before.
+export const eventGuide = async (providerChannels, realEnds) => {
+  realEnds ??= await viaplayEnds(HORIZON_DAYS);
   const channels = [];
   const programmes = [];
   let borrowed = 0;

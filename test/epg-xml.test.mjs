@@ -5,7 +5,14 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
-import { attr, escapeAttr, isPlaceholder, xmltvChannel, xmltvProgramme } from "../epg-xml.mjs";
+import {
+  attr,
+  escapeAttr,
+  isPlaceholder,
+  parseTime,
+  xmltvChannel,
+  xmltvProgramme,
+} from "../epg-xml.mjs";
 
 describe("attr", () => {
   it("reads the attributes the build depends on", () => {
@@ -103,5 +110,28 @@ describe("xmltvProgramme", () => {
   it("applies the language only when asked", () => {
     assert.match(xmltvProgramme({ channel: "c", start, stop, title: "T", lang: "is" }), /<title lang="is">/);
     assert.match(xmltvProgramme({ channel: "c", start, stop, title: "T" }), /<title>/);
+  });
+});
+
+describe("parseTime", () => {
+  it("reads a stamp the way the gate and the cache both need", () => {
+    assert.equal(parseTime("20260909095000 +0000"), Date.parse("2026-09-09T09:50:00Z"));
+  });
+
+  it("honours the offset instead of assuming everything is UTC", () => {
+    // Not every upstream publishes in UTC. Ignoring the offset would misdate a
+    // whole source by hours, which decides how far ahead the gate thinks the
+    // schedule runs and which cached programmes count as already broadcast.
+    assert.equal(parseTime("20260909120000 +0200"), parseTime("20260909100000 +0000"));
+    assert.equal(parseTime("20260909050000 -0500"), parseTime("20260909100000 +0000"));
+  });
+
+  it("defaults to UTC when no offset is given, as XMLTV allows", () => {
+    assert.equal(parseTime("20260909100000"), parseTime("20260909100000 +0000"));
+  });
+
+  it("returns NaN for anything it cannot read, rather than a wrong instant", () => {
+    for (const stamp of ["", "tomorrow", "202609091000", "2026-09-09T10:00:00Z"])
+      assert.ok(Number.isNaN(parseTime(stamp)), stamp);
   });
 });

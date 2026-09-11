@@ -25,6 +25,8 @@ import {
   hours,
   isPlaceholder,
   mb,
+  parseTime,
+  titleOf,
 } from "./epg-xml.mjs";
 import { EVENT_NAME, eventGuide } from "./events.mjs";
 import { getJson, request } from "./http.mjs";
@@ -112,10 +114,26 @@ const checkAliasList = (channels) => {
 // that saying so beats an ERR_STRING_TOO_LONG stack trace in the log.
 const MAX_STRING = 0x1fffffe8;
 
+// One wall-clock budget for all the downloading, rather than a per-request
+// timeout that multiplies. Thirteen sources, three attempts each and a
+// three-minute timeout is ninety minutes of worst case against a twenty-minute
+// job, so a couple of hung hosts would cost the whole run — which is the
+// opposite of the rule that an unreachable upstream costs only its own source.
+// A source that finds the budget spent fails fast and falls back to its cached
+// copy, which is exactly what that copy is for. The happy path is ~4 minutes.
+const FETCH_BUDGET_MS = 11 * 60_000;
+const SOURCE_TIMEOUT_MS = 180_000;
+let fetchDeadline = Infinity;
+
 const fetchSource = async ({ url, build }) => {
   if (build) return build(); // assembled from a JSON API rather than fetched as XMLTV
-  // Generous, because one of these is a 59 MB download.
-  const res = await request(url, { timeoutMs: 180_000 });
+
+  const left = fetchDeadline - Date.now();
+  if (left <= 0) throw new Error("the run's fetch budget is spent");
+
+  // Generous, because one of these is a 59 MB download — but never more than
+  // the budget has left, so the last source cannot overrun the job on its own.
+  const res = await request(url, { timeoutMs: Math.min(SOURCE_TIMEOUT_MS, left), attempts: 2 });
   const buf = Buffer.from(await res.arrayBuffer());
   const raw = url.endsWith(".gz") ? gunzipSync(buf) : buf;
   if (raw.length > MAX_STRING) throw new Error(`${mb(raw.length, 0)} uncompressed, too big to parse`);
@@ -353,11 +371,13 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
   for (const [element] of xml.matchAll(PROGRAMME)) {
     if (isPlaceholder(element)) continue;
     // Some upstream files carry a programme that ends before it starts, or at
-    // the same instant. Both stamps are fixed width and share one offset, so
-    // comparing the digits is enough to drop them.
-    const from = attr(element, "start");
-    const to = attr(element, "stop");
-    if (from && to && to.slice(0, 14) <= from.slice(0, 14)) continue;
+    // the same instant, or with a stamp nothing can read. All three are dropped
+    // here rather than left for the gate: the gate refuses the whole publish,
+    // and one bad row from an upstream nobody here controls is not worth the
+    // rest of the grid going unrefreshed.
+    const from = parseTime(attr(element, "start") ?? "");
+    const to = parseTime(attr(element, "stop") ?? "");
+    if (!(to > from)) continue;
     for (const target of resolved.get(attr(element, "channel")) ?? [])
       programmes.push({
         channel: target,
@@ -377,6 +397,11 @@ const allChannels = [];
 const allProgrammes = [];
 const programmesByChannel = new Map();
 const counts = {};
+// Every channel-and-slot already filled, so an upstream repeating itself cannot
+// reach the guide. Global rather than per source: only one source ever emits a
+// given channel, but this way a producer cannot repeat itself either.
+const slots = new Set();
+let repeats = 0;
 const stale = {}; // label -> age in days of the cached copy standing in for it
 const seen = new Set();
 
@@ -392,6 +417,17 @@ const merge = (label, { channels: produced, programmes }) => {
   }
   for (const { channel, element } of programmes) {
     if (!emitted.has(channel)) continue;
+    // One programme per channel and slot. Upstreams do repeat themselves — UK1
+    // publishes Sky Kids twice, every programme of it, and guide3 repeats a
+    // handful of Icelandic rows — and a repeat is not harmless: the grid shows
+    // one of two identical entries, chosen arbitrarily. Measured at 391 of
+    // 79,497 programmes in the last run before this existed.
+    const slot = [channel, attr(element, "start"), attr(element, "stop"), titleOf(element)].join("|");
+    if (slots.has(slot)) {
+      repeats++;
+      continue;
+    }
+    slots.add(slot);
     allProgrammes.push(element);
     // Kept per channel as well, so a "+1" channel can be built from its base.
     // These are the same strings allProgrammes holds, not copies, so the cost
@@ -409,24 +445,49 @@ const merge = (label, { channels: produced, programmes }) => {
 // should not empty a grid that was fine an hour ago. cache.mjs explains the
 // bounds. The failure is still reported, and still recorded as such in
 // counts.json, so the gate and the log show it instead of it passing silently.
+fetchDeadline = Date.now() + FETCH_BUDGET_MS;
+
+// Ids the playlist still carries, so a cached channel cannot be emitted under
+// an id the provider has since pointed at a different channel.
+const stillKnown = new Set(channels.map((ch) => ch.epg_channel_id).filter(Boolean));
+
 for (const source of SOURCES) {
   const { label } = source;
-  let produced;
+  let produced = null;
 
   try {
     produced = convert(await fetchSource(source), index, source);
-    cache.save(label, produced);
   } catch (err) {
-    produced = cache.load(label);
-    if (!produced) {
+    // load() is documented never to throw, and is wrapped anyway: a fallback
+    // that fails must cost this source its channels, never the whole build.
+    let fallback = null;
+    try {
+      fallback = cache.load(label, { stillKnown });
+    } catch (cacheErr) {
+      console.error(`${label}: the cached copy could not be read (${cacheErr.message})`);
+    }
+
+    if (!fallback) {
       counts[label] = 0;
       console.error(`${label}: failed (${err.message}), and no usable cached copy — no guide this run`);
       continue;
     }
-    stale[label] = produced.ageDays;
+    produced = fallback;
+    stale[label] = fallback.ageDays;
     console.error(
-      `${label}: failed (${err.message}), serving a cached copy ${hours(produced.ageDays)} old`
+      `${label}: failed (${err.message}), serving a cached copy ${hours(fallback.ageDays)} old`
     );
+  }
+
+  // Outside the try on purpose. A disk error here is not an upstream failure,
+  // and letting it fall into the catch above would discard a good live fetch
+  // and then blame the source for it.
+  if (!(label in stale)) {
+    try {
+      cache.save(label, produced);
+    } catch (err) {
+      console.error(`${label}: fetched fine, but the cached copy could not be written (${err.message})`);
+    }
   }
 
   merge(label, produced);
@@ -468,3 +529,4 @@ writeFileSync(COUNTS, `${JSON.stringify({ sources: counts, stale }, null, 2)}\n`
 console.log(
   `\n${OUT}: ${seen.size} channels, ${allProgrammes.length} programmes, ${mb(raw.length)} raw`
 );
+if (repeats) console.log(`${repeats} repeated programmes dropped: an upstream listing itself twice`);

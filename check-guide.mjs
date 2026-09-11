@@ -1,20 +1,43 @@
-// The publish gate. Refuses a guide that would empty the grid, and records what
-// was published in status.json — which the next run reads back as its baseline,
-// so the per-source check below needs no thresholds kept up to date.
+// The publish gate, and it answers two different questions.
 //
-// Exits non-zero so the workflow stops and leaves the last good release in
-// place. A failure here is the signal that an upstream changed, not that the
-// grid is broken: viewers keep yesterday's guide until it is fixed.
+// Is the guide itself broken — too small, too stale, self-contradictory? Then
+// refuse to publish, because the release already up is better than this one.
+//
+// Or is the guide fine and a source regressed? Then publish it anyway and fail
+// the job afterwards. Refusing in that case used to make things worse: the
+// baseline is only recorded on a successful run, so a refusal pinned it and the
+// build stayed red until someone hand-edited status.json — while the release it
+// was protecting emptied out, most sources publishing under four days ahead.
+// Fresh data for the channels that work, plus a red build, beats neither.
+//
+// So --record writes the baseline whenever the guide is publishable, and
+// --regressions is the separate step that fails the job for what it recorded.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 
-import { CHANNEL, DISPLAY_NAME, HOUR_MS, PROGRAMME, attr, hours, mb, parseTime } from "./epg-xml.mjs";
+import {
+  CHANNEL,
+  DISPLAY_NAME,
+  HOUR_MS,
+  PROGRAMME,
+  attr,
+  hours,
+  mb,
+  parseTime,
+  titleOf,
+} from "./epg-xml.mjs";
 
 // Writing status.json is how the next run gets its baseline, so it happens only
 // when CI asks for it. Otherwise running this by hand would overwrite the
 // committed baseline with whatever an ad-hoc build produced.
+const readJson = (file) => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null);
+
 const record = process.argv.includes("--record");
+
+// The second half of the answer, run as its own step after the guide is safely
+// published: turn what --record wrote into a red build.
+const REGRESSIONS = "--regressions";
 
 const MIN_CHANNELS = 300;
 const MIN_PROGRAMMES = 20_000;
@@ -35,17 +58,35 @@ const GUIDE = "guide.xml.gz";
 const STATUS = "status.json";
 const COUNTS = "counts.json";
 
-const readJson = (file) => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null);
+// Nothing below this needs the guide, so it runs before the file is read: this
+// step is deliberately able to work after the guide has been published and the
+// workspace moved on.
+if (process.argv.includes(REGRESSIONS)) {
+  const recorded = readJson(STATUS)?.regressions ?? [];
+  if (!recorded.length) {
+    console.log("no source regressed in the run just published");
+    process.exit(0);
+  }
+  console.error("a source regressed in the run just published:");
+  for (const regression of recorded) console.error(`  - ${regression}`);
+  console.error(
+    "\nthe guide is live and the rest of the grid is fresh — this is the signal to look at that source"
+  );
+  process.exit(1);
+}
 
 const bytes = readFileSync(GUIDE);
 const xml = gunzipSync(bytes).toString("utf8");
 
 // One channel element per id, or a player picks between them arbitrarily.
+// Read through attr(), not a pattern that assumes id comes first: a source is
+// free to write <channel lang="en" id="X">, and counting every programme on
+// that channel as orphaned would refuse the publish over attribute order.
 const declared = new Set();
 let channels = 0;
-for (const [, id] of xml.matchAll(/<channel id="([^"]*)"/g)) {
+for (const [element] of xml.matchAll(CHANNEL)) {
   channels++;
-  declared.add(id);
+  declared.add(attr(element, "id"));
 }
 
 // The same worry one level down: a display-name on two channel ids is a name a
@@ -73,19 +114,30 @@ let programmes = 0;
 let latest = -Infinity;
 let invalid = 0; // ends before it starts, or carries a stamp nothing can read
 let orphaned = 0; // names a channel the guide never declares
+let repeated = 0; // the same programme in the same slot twice
+const slots = new Set();
 for (const [element] of xml.matchAll(PROGRAMME)) {
   programmes++;
-  const stop = parseTime(attr(element, "stop") ?? "");
-  const start = parseTime(attr(element, "start") ?? "");
+  const channel = attr(element, "channel");
+  const from = attr(element, "start");
+  const to = attr(element, "stop");
+  const start = parseTime(from ?? "");
+  const stop = parseTime(to ?? "");
   if (stop > latest) latest = stop;
   if (!(stop > start)) invalid++;
-  if (!declared.has(attr(element, "channel"))) orphaned++;
+  if (!declared.has(channel)) orphaned++;
+  const slot = [channel, from, to, titleOf(element)].join("|");
+  if (slots.has(slot)) repeated++;
+  else slots.add(slot);
 }
 const hoursAhead = (latest - Date.now()) / HOUR_MS;
 
 console.log(`${GUIDE}: ${mb(bytes.length)} gzipped`);
 console.log(`channels:   ${channels} (floor ${MIN_CHANNELS}), ${declared.size} distinct ids`);
-console.log(`programmes: ${programmes} (floor ${MIN_PROGRAMMES}), ${invalid} invalid, ${orphaned} orphaned`);
+console.log(
+  `programmes: ${programmes} (floor ${MIN_PROGRAMMES}), ${invalid} invalid,` +
+    ` ${orphaned} orphaned, ${repeated} repeated`
+);
 console.log(`names on more than one channel: ${sharedNames}`);
 console.log(
   Number.isFinite(latest)
@@ -106,6 +158,8 @@ if (channels !== declared.size)
 if (invalid)
   failures.push(`${invalid} programmes end before they start, or carry a stamp nothing can read`);
 if (orphaned) failures.push(`${orphaned} programmes name a channel the guide never declares`);
+if (repeated)
+  failures.push(`${repeated} programmes are listed twice in the same slot — the builder should have dropped them`);
 if (!Number.isFinite(latest)) failures.push("no programme carries a parseable stop time");
 else if (hoursAhead < MIN_HOURS_AHEAD)
   failures.push(
@@ -119,14 +173,21 @@ const handoff = readJson(COUNTS) ?? {};
 const counts = handoff.sources ?? {};
 const stale = handoff.stale ?? {};
 const previous = readJson(STATUS)?.sources ?? {};
+const regressions = [];
 for (const [label, before] of Object.entries(previous)) {
   // A label the build no longer reports at all was removed from SOURCES on
-  // purpose. Failing on that would deadlock: the publish stops, so status.json
-  // never updates, so it fails again forever.
+  // purpose, so it is not a regression.
   if (!(label in counts) || CHURNS.has(label)) continue;
   if (before > 0 && counts[label] === 0)
-    failures.push(`source "${label}" matched ${before} channels last run and 0 now — its upstream changed`);
+    regressions.push(`source "${label}" matched ${before} channels last run and 0 now`);
 }
+
+// Reported every run, not just on the run it broke: once the baseline records
+// the zero, the transition above never fires again, and a source that stays
+// dead should keep saying so.
+const zeroed = Object.entries(counts)
+  .filter(([label, now]) => now === 0 && !CHURNS.has(label))
+  .map(([label]) => label);
 // A cached source is a source that failed, and its count above came from the
 // last copy that worked. Worth saying on every run: the guide is fine, the
 // upstream is not, and when the copy ages out the check above starts failing.
@@ -139,6 +200,13 @@ if (Object.keys(previous).length)
       .map(([label, n]) => `${label} ${previous[label] ?? "-"}->${n}`)
       .join(", ")}`
   );
+
+for (const label of zeroed) console.log(`note: source "${label}" is carrying no channels`);
+if (regressions.length) {
+  console.log(`\nthis guide is publishable, but a source regressed:`);
+  for (const regression of regressions) console.log(`  - ${regression}`);
+  console.log(`publishing anyway; the "${REGRESSIONS}" step is what turns the run red`);
+}
 
 if (failures.length) {
   console.error(`\nrefusing to publish:`);
@@ -164,6 +232,8 @@ writeFileSync(
       sources: counts,
       stale,
       sharedNames,
+      regressions,
+      zeroed,
     },
     null,
     2

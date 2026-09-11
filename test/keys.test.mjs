@@ -5,7 +5,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
-import { baseKey, bodyOf, ccOf, idKey, nameKey, scopedBaseKey, scopedKey } from "../keys.mjs";
+import { baseKey, bodyOf, ccOf, idKey, nameKey, providerCc, scopedBaseKey, scopedKey } from "../keys.mjs";
 
 describe("idKey", () => {
   it("collapses the two ways the same id is written", () => {
@@ -118,5 +118,29 @@ describe("scopedKey and scopedBaseKey", () => {
 
   it("return nothing when the name normalises away", () => {
     assert.equal(scopedKey("uk", "(GB,EN)"), "");
+  });
+});
+
+describe("providerCc", () => {
+  it("reads the country out of the channel name, which is where my provider puts it", () => {
+    assert.equal(providerCc({ name: "UK: BBC One", epg_channel_id: "BBCOne.uk" }), "uk");
+    assert.equal(providerCc({ name: "IS:  RUV FHD", epg_channel_id: "" }), "is");
+  });
+
+  it("only treats a two-letter prefix as a country", () => {
+    // "CAR:" is a label for a group of channels, not a country. Widening this
+    // to the two-to-four characters that bare() strips would invent a country
+    // called "car" and scope real channels into it, where nothing can match.
+    assert.notEqual(providerCc({ name: "CAR: Racing 1", epg_channel_id: "" }), "car");
+    assert.notEqual(providerCc({ name: "PPV: Fight Night", epg_channel_id: "" }), "ppv");
+  });
+
+  it("falls back to the id for a row carrying no prefix", () => {
+    assert.equal(providerCc({ name: "Animal Planet", epg_channel_id: "AnimalPlanet.is" }), "is");
+  });
+
+  it("returns nothing rather than throwing when the row has neither", () => {
+    assert.equal(providerCc({}), "");
+    assert.equal(providerCc({ name: null, epg_channel_id: null }), "");
   });
 });

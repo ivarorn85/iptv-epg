@@ -68,12 +68,45 @@ describe("request", () => {
     await assert.rejects(run([500, 500, 500]), /HTTP 500/);
   });
 
-  it("honours its own timeout", async () => {
+  it("gives up at its own timeout, not at some later one", async () => {
+    // Asserting only that it rejects proves nothing: with the timeout removed
+    // this still passed, after 306 seconds, because Node's own server request
+    // timeout destroyed the socket. The elapsed time is the whole assertion —
+    // a regression here would quietly turn the build into a five-minute wait.
     const slow = createServer(() => {}); // accepts, never answers
     await new Promise((resolve) => slow.listen(0, "127.0.0.1", resolve));
     const slowUrl = `http://127.0.0.1:${slow.address().port}/`;
-    await assert.rejects(request(slowUrl, { timeoutMs: 60, attempts: 1 }));
+
+    const began = Date.now();
+    await assert.rejects(request(slowUrl, { timeoutMs: 250, attempts: 1 }));
+    const elapsed = Date.now() - began;
     slow.close();
+
+    assert.ok(elapsed < 5_000, `gave up after ${elapsed}ms, so the timeout was not its own`);
+  });
+
+  it("retries a connection that fails rather than answers", async () => {
+    // The syn.is case, and the shape a real outage takes more often than a
+    // clean 5xx: the connection is refused or reset, so there is no status to
+    // read. A retry must still happen.
+    const closed = createServer(() => {});
+    await new Promise((resolve) => closed.listen(0, "127.0.0.1", resolve));
+    const port = closed.address().port;
+    await new Promise((resolve) => closed.close(resolve)); // nothing listens now
+
+    let attempts = 0;
+    const counting = createServer((req, res) => {
+      attempts++;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("{}");
+    });
+
+    // First attempt hits nothing; once the server is up the retry must succeed.
+    setTimeout(() => counting.listen(port, "127.0.0.1"), 50);
+    const res = await request(`http://127.0.0.1:${port}/`, { retryDelayMs: 200, attempts: 3 });
+    assert.equal(res.status, 200);
+    assert.ok(attempts >= 1, "the retry has to have reached the server");
+    counting.close();
   });
 });
 

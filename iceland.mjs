@@ -9,10 +9,9 @@
 // Neither API is a contract, so every field is treated as optional: one
 // malformed row must cost its own programme, never the whole source.
 
-import { xmltvChannel, xmltvProgramme } from "./epg-xml.mjs";
+import { HOUR_MS, xmltvChannel, xmltvProgramme } from "./epg-xml.mjs";
 import { getJson, request } from "./http.mjs";
 
-const HOUR_MS = 3_600_000;
 
 // What to assume when a publisher gives a start and no end.
 const ASSUMED_HOURS = 3;

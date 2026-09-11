@@ -75,5 +75,9 @@ export const xmltvProgramme = ({ channel, start, stop, title, desc, categories =
 const PLACEHOLDER =
   /^(no data|no event today|no information|no programme|tba|to be announced|n\/a|-|dagskrárlok)$/i;
 
+// The programme's title, or "" — used both to spot filler and, in the merge,
+// to tell one programme from another in the same slot.
+export const titleOf = (element) => (TITLE.exec(element) ?? [])[1]?.trim() ?? "";
+
 export const isPlaceholder = (element) =>
-  PLACEHOLDER.test((TITLE.exec(element) ?? [])[1]?.trim() ?? "");
+  PLACEHOLDER.test(titleOf(element));

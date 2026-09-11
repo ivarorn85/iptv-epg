@@ -76,9 +76,11 @@ jobs:
           path: cache
           key: epg-cache-${{ github.run_id }}
 
-      # Refuses a guide that would empty the grid. The job stops here, the last
-      # good release stays up, and the failure mail is the signal to look.
-      # --record updates status.json, which is the next run's baseline.
+      # Refuses a guide that would empty the grid — too small, too stale, or
+      # self-contradictory. The job stops here and the last good release stays
+      # up. A source regressing does not stop it: that is reported at the end,
+      # after the working channels have their fresh data. --record updates
+      # status.json, which is the next run's baseline.
       - name: Check the guide is publishable
         run: node check-guide.mjs --record
 
@@ -109,3 +111,10 @@ jobs:
           git diff --quiet --cached || git commit -m "EPG $(date -u +%Y-%m-%d)"
           git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      # Last, so a source regressing turns the run red without having held up
+      # the publish. The guide is already live and the baseline already
+      # recorded, so this fails once per regression rather than for as long as
+      # the source stays broken — the log and status.json carry it from there.
+      - name: Report a regressed source
+        run: node check-guide.mjs --regressions

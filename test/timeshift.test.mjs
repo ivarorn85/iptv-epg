@@ -62,6 +62,20 @@ describe("timeshiftGuide", () => {
     assert.equal(programmes[0].channel, channels[0].id);
   });
 
+  it("drops a programme whose stop will not shift, not just its start", () => {
+    // The asymmetric case: shifting the start while leaving the stop behind
+    // emits a programme ending before it begins. Both stamps or neither.
+    const { programmes, unshiftable } = timeshiftGuide(
+      [base, plusOne],
+      withSchedule(
+        "Film4 HD.uk",
+        programme("Film4 HD.uk", "20260909200000 +0000", "2026090921450 +0000")
+      )
+    );
+    assert.deepEqual(programmes, []);
+    assert.equal(unshiftable, 1);
+  });
+
   it("drops a programme whose stamps will not shift, and counts it", () => {
     // Half a shift would emit a programme ending before it starts, which is
     // the one thing the guide must never contain.
@@ -83,6 +97,9 @@ describe("timeshiftGuide", () => {
     // Coral TV 2.
     const rows = [
       { name: "UK: Coral TV", epg_channel_id: "Coral.uk" },
+      // The one that matters: a single space before the 1 is channel one, not
+      // a timeshift of the channel above it.
+      { name: "UK: Coral TV 1", epg_channel_id: "" },
       { name: "UK: Coral TV 2", epg_channel_id: "" },
       { name: "UK: Coral TV  1 HD", epg_channel_id: "" },
     ];
