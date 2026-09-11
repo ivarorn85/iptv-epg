@@ -1,26 +1,26 @@
 {
-  "built": "2026-09-11T13:00:50.316Z",
-  "channels": 1795,
-  "programmes": 64429,
+  "built": "2026-09-11T13:36:21.853Z",
+  "channels": 1825,
+  "programmes": 78609,
   "scheduleRunsTo": "2026-10-31T17:00:00.000Z",
-  "gzipBytes": 5264321,
+  "gzipBytes": 8189795,
   "sources": {
     "RÚV": 2,
     "Sýn": 13,
     "Síminn": 21,
-    "Iceland extra": 0,
-    "Iceland": 5,
+    "Iceland extra": 2,
+    "Iceland": 4,
     "UK": 170,
-    "UK extra": 0,
-    "US": 142,
+    "UK extra": 50,
+    "US": 141,
     "US sports": 30,
-    "US extra": 0,
-    "UK extra 2": 45,
-    "US extra 2": 33,
-    "Denmark": 58,
+    "US extra": 63,
+    "UK extra 2": 8,
+    "US extra 2": 0,
+    "Denmark": 57,
     "Norway": 4,
     "Sweden": 80,
-    "Events": 1184,
+    "Events": 1172,
     "Timeshift": 8
   },
   "stale": {},
@@ -28,15 +28,17 @@
     "DK: TV3+ FHD",
     "DK: TV3 Sport UHD",
     "DK: TV3 Sport FHD",
-    "DK: Sport Live FHD",
+    "UK: Sky Sport F1 UHD 4K B",
     "UK: TNT Sports 3 FHD P50",
+    "UK: Sky Sport F1 (SkyGo)",
     "UK: Sky Sport Football (SkyGo)"
   ],
-  "regressions": [],
+  "overlapping": 26,
+  "regressions": [
+    "source \"US extra 2\" matched 33 channels last run and 0 now"
+  ],
   "zeroed": [
-    "Iceland extra",
-    "UK extra",
-    "US extra"
+    "US extra 2"
   ],
   "collapsed": {}
 }
