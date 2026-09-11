@@ -27,7 +27,8 @@ TiviMate succeeds on step one and never has to guess.
    token — and push:
 
    ```
-   build-epg.mjs        source list, matching passes, merge, main
+   build-epg.mjs        source list, merge, and the run itself
+   match.mjs            the five matching passes and the provider index
    iceland.mjs          the two Icelandic broadcasters' JSON APIs
    siminn.mjs           Sjónvarp Símans' seven-day guide, read off its page
    events.mjs           per-event channels read out of their own names
@@ -563,6 +564,16 @@ One test asserts a _limitation_ rather than a feature: epgshare's Norwegian
 names carry the country as a word, which no normalisation strips, so they never
 meet my provider's. It is recorded because it looks like a matching bug.
 
+The matching passes are tested too, which they were not until `match.mjs` was
+split out of `build-epg.mjs` — that file runs the whole build on import, so the
+code where "one channel's schedule on another" is decided had been the only
+part of the project with nothing behind it. The cases are precedence and scope:
+an exact id hit not also sweeping up its loose sibling, one source channel
+fanning out to two provider ids when only the loose key matches, a claimed
+target never being taken twice, `borrow` widening to the one declared country
+and never to UK or US, a filler-only channel claiming nothing, and the "+1"
+id collision staying unmatched so the timeshift pass fills it.
+
 What no unit test can see is the finished file, where every producer's output
 meets every other's, so the gate checks the three hard requirements there
 instead: no channel id declared twice, no programme ending before it starts, no
@@ -593,6 +604,7 @@ Checked against the real playlist, so none of this needs re-testing.
 | iptv-org/api (channel database)       | Measured: resolves **0** of the rows we miss. Its `alt_names` are good, but the bottleneck is source coverage rather than naming, and its canonical ids (`SVT1.se`) are a third vocabulary — adopting them would break matching against my provider's `tvg-id`. The `closed` field is useful for diagnosing dead channels, which is a one-off question, not a daily download. |
 | globetvapp/epg                        | 454 country files, and abandoned: the last commit is 2025-12-31. Measured — every file's newest programme ended **252 days ago**, with zero still in the future, so the gate would refuse it and every source count would be zero. Its `Iceland/iceland2.xml` carries exactly 55 channels, which is a scrape of Síminn, so the repo is useful only as a pointer to the source below it.                                    |
 | epgshare's other files                | Measured against the 135 channels iptv-epg.org's outage cost us: `IE1` fills 2, and `BEIN1`, `US_LOCALS1`, `RALLY_TV1` and `FANDUEL1` fill **none** despite looking like exact matches by name. `IE1` was tried and removed — it serves mostly Irish rows, and one UK channel is not worth 163 channels of another country. `ALL_SOURCES1` cannot be parsed at all: it exceeds the largest string Node can hold. |
+| is-epg.run.place `guide.xml`, `guide2.xml` | The same Icelandic guide as `guide3.xml` under two other playlist vendors' conventions — `VIP IS: RUV` and `IC\| RUV HD` against our `IS: RUV FHD`. Measured: between them they hold **22** programme slots we do not already publish, and every one is `Dagskrárlok`, the end-of-day filler this build strips deliberately. `guide2` looks bigger only because it lists each programme against both an HD and an FHD row. For RÚV 2 specifically, all three carry 2 programmes half a day out where ruv.is gives 16 across nine days. |
 | viaplay.is content API                | Not usable as a source — start and end times but **no channel field at all**, so there is nothing to key XMLTV on. Its end times _are_ borrowed for the event pass, below.                                                                                                                                                                                                    |
 | framundanibeinni.is                   | Names a channel per fixture, but 228 of its 369 entries are `viaplay` or `livey`, which identify the _service_ rather than which V Sport Live or `[Livey]` channel carries it. The rest is `syn*`/`ruv*`/`eurosport*`, already covered better — syn.is gives `synsportisland` 324 entries where this gives 4.                                                                 |
 
