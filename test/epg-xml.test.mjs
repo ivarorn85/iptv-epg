@@ -37,8 +37,11 @@ describe("escapeAttr", () => {
     assert.equal(escapeAttr('A&E "quoted" <tag>'), "A&amp;E &quot;quoted&quot; &lt;tag>");
   });
 
-  it("is safe to apply to element text as well as attributes", () => {
-    assert.equal(escapeAttr("Rock & Roll"), "Rock &amp; Roll");
+  it("leaves alone what does not need escaping, including the closing bracket", () => {
+    // ">" is deliberately not escaped: it is legal in XML text and in an
+    // attribute value, and escaping it only made the output noisier.
+    assert.equal(escapeAttr("Rock > Roll"), "Rock > Roll");
+    assert.equal(escapeAttr("Bítið á Sýn"), "Bítið á Sýn");
   });
 });
 

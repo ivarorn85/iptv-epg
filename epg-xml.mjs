@@ -8,7 +8,9 @@ const TITLE = /<title[^>]*>([\s\S]*?)<\/title>/;
 
 // Built once per attribute name and reused: attr() runs on every programme of
 // every source, and compiling the pattern per call was the hottest waste here.
-const patterns = {};
+// No prototype, because the keys are attribute names from the caller: asking
+// for "constructor" would otherwise find a function rather than a pattern.
+const patterns = Object.create(null);
 
 export const attr = (element, name) => {
   patterns[name] ??= new RegExp(`\\b${name}="([^"]*)"`);

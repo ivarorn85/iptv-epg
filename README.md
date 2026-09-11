@@ -488,6 +488,13 @@ Some gaps are genuinely the source's, and some channels are simply gone:
   pointing them at the HD channel would show programmes that are not on. The two
   `HDR 4K` rows are the opposite case and are filled — see
   [the one manual list](#the-one-manual-list).
+- **`IS: BBC Brit HD` shows BBC Nordic's schedule, and that is correct.** My
+  provider gives that row the id `BBC Nordic.is`, because BBC Brit was
+  rebranded BBC Nordic in the Nordics — so Síminn's BBC Nordic matches it
+  exactly and rightly. `IS: BBC Nordic FHD` is a second row for the same
+  channel carrying the Swedish id, so it takes Sweden's BBC Nordic instead.
+  Both rows end up with the right channel from a different market; it only
+  looks wrong because the two rows are named a rebrand apart.
 - **`IE:  RTE 2 FHD`** is the one row measured to be advertised on two channels
   that are not the same channel, and the cause is upstream of this build: my
   provider maps its own `IE: RTE 2 HD` to `RTÉ 2FM.uk`, which is a radio

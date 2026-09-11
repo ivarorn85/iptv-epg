@@ -19,15 +19,19 @@ import { nameKey } from "./keys.mjs";
 
 export const EVENT_NAME = /^\[(?:[^\]]+)\]\s*\((\d{1,2})\/(\d{1,2})\)\s*(\d{1,2}):(\d{2})\s+(\S.*)$/;
 
-// The name gives no end time.
+// The name gives no end time. iceland.mjs assumes the same three hours for
+// the same reason, deliberately separately — a fixture and a television
+// programme are not obliged to guess alike.
 const ASSUMED_HOURS = 3;
 // The playlist only ever carries near-term fixtures, and the furthest seen is
 // about seven weeks out. Anything beyond this is the year guess below picking
 // the wrong year for a row the playlist never cleared out, so it is dropped
 // rather than published as a fixture months away.
 const PLAUSIBLE_DAYS = 60;
-// How far ahead to ask Viaplay for real end times.
-const HORIZON_DAYS = 10;
+// How far ahead to ask Viaplay for real end times. Named for Viaplay, not
+// shared with iceland.mjs's own horizon: the two happen to be ten days today
+// and are separate knobs, one per upstream.
+const VIAPLAY_DAYS = 10;
 
 // Real end times are a refinement, not the schedule, so the walk that fetches
 // them gets a fixed share of the run and no more. Without this an unresponsive
@@ -104,7 +108,7 @@ const viaplayEnds = async (days) => {
 // that can only run with the network is a producer whose arithmetic is never
 // checked. Both of those have gone wrong before.
 export const eventGuide = async (providerChannels, realEnds) => {
-  realEnds ??= await viaplayEnds(HORIZON_DAYS);
+  realEnds ??= await viaplayEnds(VIAPLAY_DAYS);
   const channels = [];
   const programmes = [];
   let borrowed = 0;
@@ -129,11 +133,16 @@ export const eventGuide = async (providerChannels, realEnds) => {
     const title = event.trim();
 
     const real = realEnds.get(`${nameKey(title)}|${start.toISOString().slice(0, 16)}`);
-    const stop = real && real > start ? real : new Date(start.getTime() + ASSUMED_HOURS * HOUR_MS);
-    if (real && real > start) borrowed++;
+    const borrowedEnd = real && real > start;
+    const stop = borrowedEnd ? real : new Date(start.getTime() + ASSUMED_HOURS * HOUR_MS);
 
     if (stop.getTime() < Date.now()) continue; // a fixture the playlist never cleared out
     if (start.getTime() - Date.now() > PLAUSIBLE_DAYS * 24 * HOUR_MS) continue; // wrong year
+
+    // Counted after the guards, not before: the log line reports how many of
+    // the channels it emitted carry a real end time, and counting dropped rows
+    // made it claim more than there were.
+    if (borrowedEnd) borrowed++;
 
     channels.push({ id, element: xmltvChannel(id, [ch.name]) });
     programmes.push({
