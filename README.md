@@ -33,6 +33,7 @@ TiviMate succeeds on step one and never has to guess.
    keys.mjs             how a channel on one side is matched to the other
    epg-xml.mjs          shared XMLTV shapes and emitters
    http.mjs             one place for the User-Agent and request timeouts
+   test/                one file per module, run with `node --test`
    check-guide.mjs      the publish gate
    README.md
    .gitignore
@@ -411,6 +412,7 @@ To try matching changes without waiting for CI:
 
 ```powershell
 $env:XTREAM_HOST="http://example.com:8080"; $env:XTREAM_USER="u"; $env:XTREAM_PASS="p"
+node --test
 node build-epg.mjs
 node check-guide.mjs
 ```
@@ -422,6 +424,36 @@ does — so running it by hand cannot clobber the baseline the per-source check
 compares against.
 
 No dependencies. Needs Node 18 or newer; CI runs 22.
+
+## Tests
+
+`node --test`, run by CI before the build so a break stops the run rather than
+publishing quietly. No dependencies — `node:test` is built in.
+
+They cover the pure logic only: the keys, the XMLTV emitters, and the event-name
+parsing. That is deliberate. Those are the places where a mistake produces a
+*wrong schedule on a real channel* instead of an error, and every case in there
+is one that actually went wrong at some point or that a plausible tidy-up would
+break:
+
+- `+` surviving as a word, so Danish TV3's schedule stays off TV3+
+- the `.us2` ordinal counting as the file's name and not the country's
+- stacked variants (`UHD 4K B`, `FHD P50`) coming off together
+- `Sports` folding to `Sport`, because the two sides disagree
+- a spelled-out number folding to its digit — but only standing alone, or
+  Vodafone becomes `vodaf1`
+- a scoped key returning nothing without a country, so unlookupable entries
+  never enter the maps
+- `(12/9)` reading as 12 September, not 9 December
+- "The Help" and "Help! My House Is Haunted" not counting as filler, which a
+  substring match would have eaten
+
+One test asserts a *limitation* rather than a feature: epgshare's Norwegian
+names carry the country as a word, which no normalisation strips, so they never
+meet my provider's. It is recorded because it looks like a matching bug.
+
+The network-facing parts have no tests and are verified by the run itself — the
+per-source counts in the log and the gate that reads the finished file.
 
 ## Measured and rejected
 

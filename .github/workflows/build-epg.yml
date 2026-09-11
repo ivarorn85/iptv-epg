@@ -34,6 +34,12 @@ jobs:
         with:
           node-version: "22"
 
+      # Before the build, not after: the matching keys are where a mistake
+      # produces a wrong schedule rather than an error, so a break there must
+      # stop the run instead of publishing quietly.
+      - name: Test
+        run: node --test
+
       - name: Build guide
         env:
           XTREAM_HOST: ${{ secrets.XTREAM_HOST }}
