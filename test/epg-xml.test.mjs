@@ -76,8 +76,16 @@ describe("isPlaceholder", () => {
       assert.ok(!isPlaceholder(titled(title)), title);
   });
 
-  it("treats a programme with no title as real, not filler", () => {
-    assert.ok(!isPlaceholder('<programme start="1" stop="2" channel="c"></programme>'));
+  it("treats a programme with no title as filler, because XMLTV requires one", () => {
+    // This used to assert the opposite, on the guess that a missing title was
+    // better kept than dropped. Then a published run turned out to carry seven
+    // of them — two AFN channels emit `<title lang="en"/>` — and in a grid an
+    // untitled programme is worse than an absent one: it holds a slot and shows
+    // nothing. XMLTV makes `title` a required child, so this is the spec's
+    // reading too, not a heuristic.
+    assert.ok(isPlaceholder('<programme start="1" stop="2" channel="c"></programme>'));
+    assert.ok(isPlaceholder('<programme start="1" stop="2" channel="c"><title lang="en"/></programme>'));
+    assert.ok(isPlaceholder('<programme start="1" stop="2" channel="c"><title>   </title></programme>'));
   });
 });
 

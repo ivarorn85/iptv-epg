@@ -88,5 +88,11 @@ export const titleOf = (element) => (TITLE.exec(element) ?? [])[1]?.trim() ?? ""
 export const slotKey = (channel, element) =>
   [channel, attr(element, "start"), attr(element, "stop"), titleOf(element)].join("|");
 
-export const isPlaceholder = (element) =>
-  PLACEHOLDER.test(titleOf(element));
+// A programme with no title at all counts too. XMLTV makes `title` a required
+// child of `programme`, so one without it is malformed by the spec — and in a
+// grid it is worse than absent, occupying a slot and showing nothing. Measured
+// at 7 in a published run, on two AFN channels that emit `<title lang="en"/>`.
+export const isPlaceholder = (element) => {
+  const title = titleOf(element);
+  return !title || PLACEHOLDER.test(title);
+};

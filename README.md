@@ -655,9 +655,18 @@ id collision staying unmatched so the timeshift pass fills it.
 
 What no unit test can see is the finished file, where every producer's output
 meets every other's, so the gate checks the three hard requirements there
-instead: no channel id declared twice, no programme ending before it starts, no
-programme naming a channel the guide never declares, and no programme listed
-twice in the same slot. Any of them becoming non-zero refuses the publish.
+instead: that the file is XML a parser will accept at all, no channel id
+declared twice, no programme ending before it starts, no programme naming a
+channel the guide never declares, and no programme listed twice in the same
+slot. Any of them becoming non-zero refuses the publish.
+
+The first of those is the one that matters most and was added last. Elements
+from a dozen upstreams are passed through verbatim, so a character that is
+illegal in one of them is illegal here — and a parser that refuses the file
+refuses all of it. It is the only failure in this build that would cost every
+channel at once, which is what earns it a scan of its own: control characters
+XML forbids, a bare `&` starting no entity, a stray `<` starting no tag, and
+`]]>` in text. All zero today, and verified by injecting each one.
 
 The last of the four was added after being measured at **391** in a published
 run — UK1 publishes Sky Kids twice, every programme of it, and guide3 repeats a
