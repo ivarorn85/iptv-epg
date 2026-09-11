@@ -36,7 +36,7 @@ const at = (stamp) => new Date(`${stamp}Z`);
 
 // Walks a balanced JSON array or object from an opening bracket, so a value can
 // be lifted out of the payload without knowing what surrounds it.
-const balanced = (text, from) => {
+export const balanced = (text, from) => {
   const close = text[from] === "[" ? "]" : "}";
   let depth = 0;
   let inString = false;
@@ -74,10 +74,12 @@ const arrays = (payload, key) => {
   return found;
 };
 
-export const siminnGuide = async () => {
-  const res = await request(DAGSKRA, REQUEST);
-  const html = await res.text();
-
+// The page turned into XMLTV, with no network in it. Separated so the parsing
+// can be tested against a fixture: this is the only source that reads a web
+// page rather than an API, so it is the one most likely to break when the far
+// end is redeployed — and the one where a test should say what shape it
+// expects to find.
+export const scheduleFrom = (html) => {
   // The payload is JS-escaped JSON inside the page. A regex that walks escaped
   // strings overflows the stack at this size, so unescape in two plain passes.
   const payload = html.split('\\"').join('"').split("\\\\").join("\\");
@@ -139,4 +141,9 @@ export const siminnGuide = async () => {
 
   if (!programmes.length) throw new Error("no programmes survived parsing");
   return `<tv>\n${channels.join("\n")}\n${programmes.join("\n")}\n</tv>`;
+};
+
+export const siminnGuide = async () => {
+  const res = await request(DAGSKRA, REQUEST);
+  return scheduleFrom(await res.text());
 };
