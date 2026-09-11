@@ -46,7 +46,7 @@ jobs:
       # reads the newest entry and writes a fresh one. Losing it entirely is
       # only a lost safety net, so nothing here is load-bearing.
       - name: Restore the source cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: cache
           key: epg-cache-${{ github.run_id }}
@@ -71,7 +71,7 @@ jobs:
       # tomorrow's run should have them.
       - name: Save the source cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: cache
           key: epg-cache-${{ github.run_id }}
