@@ -47,10 +47,17 @@ const MIN_HOURS_AHEAD = 24;
 // silently forever, RÚV being both first-party and irreplaceable. The reason
 // the threshold existed was transient fetch failures, and those no longer reach
 // here: a source that fails is served from cache.mjs and keeps its count.
-const CHURNS = new Set([
+// Sources allowed to reach zero without it meaning anything is broken.
+const MAY_BE_EMPTY = new Set([
   // Read from the playlist's current fixtures rather than fetched, so it swings
   // by hundreds between runs and a quiet day is not a defect.
   "Events",
+  // Standbys. They only ever take what the sources above them leave, so when
+  // iptv-epg.org is healthy they are correctly empty and when it is down they
+  // carry 45 and 33 channels. Counting that as a regression turned the run red
+  // the moment the outage ENDED, which is precisely backwards.
+  "UK extra 2",
+  "US extra 2",
 ]);
 
 const GUIDE = "guide.xml.gz";
@@ -213,7 +220,7 @@ const regressions = [];
 for (const [label, before] of Object.entries(previous)) {
   // A label the build no longer reports at all was removed from SOURCES on
   // purpose, so it is not a regression.
-  if (!(label in counts) || CHURNS.has(label)) continue;
+  if (!(label in counts) || MAY_BE_EMPTY.has(label)) continue;
   if (before > 0 && counts[label] === 0)
     regressions.push(`source "${label}" matched ${before} channels last run and 0 now`);
 }
@@ -222,7 +229,7 @@ for (const [label, before] of Object.entries(previous)) {
 // the zero, the transition above never fires again, and a source that stays
 // dead should keep saying so.
 const zeroed = Object.entries(counts)
-  .filter(([label, now]) => now === 0 && !CHURNS.has(label))
+  .filter(([label, now]) => now === 0 && !MAY_BE_EMPTY.has(label))
   .map(([label]) => label);
 // A cached source is a source that failed, and its count above came from the
 // last copy that worked. Worth saying on every run: the guide is fine, the

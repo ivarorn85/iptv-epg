@@ -429,9 +429,12 @@ The zero rule applies at any size, deliberately. It used to take 20 channels bef
 which left RÚV (2 channels), Iceland (4), Norway (4) and Timeshift (6) able to
 break silently and permanently — RÚV being both first-party and irreplaceable.
 The threshold was there to absorb transient fetch failures, and those no longer
-reach the gate: a source that fails keeps its count from cache. `Events` is the
-one exemption, because it is read from the playlist's current fixtures and
-swings by hundreds between runs by design.
+reach the gate: a source that fails keeps its count from cache. Three sources are exempt. `Events` is read from the playlist's current
+fixtures and swings by hundreds between runs by design. `UK extra 2` and
+`US extra 2` are standbys that only take what the sources above them leave, so
+they are correctly empty while iptv-epg.org is healthy and carry 45 and 33
+channels while it is not — counting that as a regression turned the run red the
+moment an outage *ended*, which is precisely backwards.
 
 When a refusal happens the last good release stays up, so the grid keeps working
 while you look into it.
