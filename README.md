@@ -350,25 +350,30 @@ Worth knowing before editing the list:
 Baseline from a verified run. A source dropping sharply means its upstream
 changed its ids or its naming.
 
-| Source        | Channels | Note                                               |
-| ------------- | -------- | -------------------------------------------------- |
-| RÚV           | 2        | RÚV and RÚV 2, from ruv.is                         |
-| Sýn           | 13       | the whole Sýn family, from syn.is                  |
-| Síminn        | 22       | Sjónvarp Símans, and the Icelandic schedule for the foreign feeds |
-| Iceland extra | 1        | Sky News; the rest is now Síminn's                 |
-| Iceland       | 4        | Sjónvarp Símans, Samstöðin, KVF                    |
-| UK extra      | 196      | iptv-epg, first for UK: 5.4 days against UK1's 2.4 |
-| UK            | 25       | epgshare UK1, filling what iptv-epg lacks          |
-| US extra      | 189      | iptv-epg, first for US: 6.2 days against US2's 2.6 |
-| US            | 15       | epgshare US2, filling what iptv-epg lacks          |
-| US sports     | 30       | NHL team feeds, all matched by name                |
-| UK extra 2    | 8        | epg.pw standby — 45 while iptv-epg is down         |
-| US extra 2    | 0        | epg.pw standby — 33 while iptv-epg is down         |
-| Denmark       | 57       |                                                    |
-| Norway        | 4        | see the note below                                 |
-| Sweden        | 80       |                                                    |
-| Events        | ~600     | read out of channel names, not fetched             |
-| Timeshift     | 8        | "+1" rows, derived from their base channel         |
+| Source        | Wins | If the one above it died | What it is for                          |
+| ------------- | ---- | ------------------------ | --------------------------------------- |
+| RÚV           | 2    | —                        | first party: RÚV and RÚV 2              |
+| Sýn           | 13   | —                        | first party: the whole Sýn family       |
+| Síminn        | 22   | —                        | Sjónvarp Símans, and the Icelandic schedule for the foreign feeds |
+| Iceland extra | 1    | 20                       | insurance for Síminn; Sky News is its own |
+| Iceland       | 4    | 10                       | Samstöðin and KVF, which nothing else has |
+| UK extra      | 198  | —                        | UK, 5.4 days                            |
+| UK            | 24   | 130                      | fills UK extra's gaps, and covers it entirely if it fails |
+| US extra      | 189  | —                        | US, 6.2 days                            |
+| US            | 15   | 126                      | fills US extra's gaps, and covers it entirely if it fails |
+| US sports     | 30   | 1                        | NHL team feeds, all matched by name     |
+| UK extra 2    | 8    | 157                      | standby, epg.pw                         |
+| US extra 2    | 0    | 139                      | standby, epg.pw                         |
+| Denmark       | 57   | 15                       | Nordic feeds for Icelandic rows         |
+| Norway        | 4    | 1                        | see the note below                      |
+| Sweden        | 80   | 14                       | Nordic feeds for Icelandic rows         |
+| Events        | ~600 | —                        | read out of channel names, not fetched  |
+| Timeshift     | 8    | —                        | "+1" rows, derived from their base      |
+
+"Wins" is what it claims with every other source present; the next column is
+what it would pick up if the source above it failed. Nothing here is dead
+weight — the thin ones are insurance, and the gate knows not to call a standby
+at zero a regression.
 
 About 1,800 channels and 102,000 programmes: 16 MB gzipped, 83 MB raw, which is
 comfortably under the size that chokes TiviMate. `Events` moves between runs by
@@ -552,10 +557,24 @@ Some gaps are genuinely the source's, and some channels are simply gone:
   them and records the number in `status.json`, so the day that stops being
   true shows up as a diff.
 
-- **Skjár 1** publishes no schedule. Its dagskrá page is a policy statement —
-  films with Icelandic subtitles at 5, 7, 9 and 11 daily — with no titles
-  anywhere. Synthesising "Kvikmynd" blocks would be the same filler this build
-  strips out of iptv-epg.org.
+- **Skjár 1** publishes its schedule as a picture. The dagskrá page carries 759
+  characters of text in total, all of it the station's programming policy —
+  films with Icelandic subtitles at 17:00, 19:00, 21:00 and 23:00 daily — and a
+  single 1280×720 JPEG with an empty `alt`. The film titles are real and they
+  are in that image; there is no JSON, no times in text, nothing else.
+
+  So it is parseable only by OCR, and that is not worth doing here. The titles
+  are set in decorative poster faces over busy artwork, which is the hardest
+  case there is, and Icelandic diacritics are exactly where OCR degrades — but
+  the deciding reason is that a misread does not fail, it publishes the wrong
+  film. That is the one category this project treats as worse than an empty row,
+  and it would arrive through the only source that could not throw instead. It
+  would also cost the zero-dependency property for four programmes a day.
+
+  Emitting four untitled blocks a day at the known times was considered and
+  rejected: it is the same filler this build strips out of iptv-epg.org, and
+  because this guide outranks the provider's own in TiviMate it would override
+  anything the provider might have.
 - **UK1 carries only regional `BBC.One.Yorks.HD.uk` variants**, never a plain
   BBC One, which is why `UK extra` is in the list. (An earlier version of this
   note also claimed UK1 has no Sky Sports F1; it does — `SkySp F1 HD.uk`, with

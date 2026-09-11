@@ -44,10 +44,12 @@ const SOURCES = [
   // only Icelandic source here that is not iptv-epg.org, which took 135
   // channels' guide down with it for a day and a half.
   { label: "Síminn", build: siminnGuide },
-  // Ids already in my provider's vocabulary ("AnimalPlanet.is"), and it runs
-  // first because it carries a full week of RUV and RUV 2 where guide3 has one
-  // day. It has nothing for Sýn, Sýn Sport, Sjónvarp Símans or KVF, so guide3
-  // still does the heavy lifting and picks those up next.
+  // Down to one channel of its own — Sky News — now that Síminn serves the
+  // Icelandic schedule for everything else it used to carry. It stays as
+  // insurance rather than for that one channel: it offers 21 and would pick up
+  // 20 of them the day Síminn breaks, which is the likeliest of these to break,
+  // being a page scrape of a page that answers HTTP 500. Its ids are already in
+  // my provider's vocabulary ("AnimalPlanet.is"), so it needs no help matching.
   { label: "Iceland extra", url: `${IPTVEPG}is.xml.gz` },
   { label: "Iceland", url: "https://is-epg.run.place/iptv/guide3.xml", passthrough: true },
   // iptv-epg ahead of epgshare for UK and US, which is a deliberate reversal.
@@ -66,6 +68,8 @@ const SOURCES = [
   // string Node can hold, and will start being skipped once it outgrows that;
   // epgshare behind it is what carries US if that happens.
   { label: "UK extra", url: `${IPTVEPG}gb.xml.gz` },
+  // Wins 24 channels of its own now, and would take 130 the day iptv-epg goes
+  // down — which is the whole reason reordering these two cost no resilience.
   { label: "UK", url: `${EPGSHARE}UK1.xml.gz` },
   { label: "US extra", url: `${IPTVEPG}us.xml.gz` },
   { label: "US", url: `${EPGSHARE}US2.xml.gz` },

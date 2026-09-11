@@ -53,11 +53,19 @@ const MAY_BE_EMPTY = new Set([
   // by hundreds between runs and a quiet day is not a defect.
   "Events",
   // Standbys. They only ever take what the sources above them leave, so when
-  // iptv-epg.org is healthy they are correctly empty and when it is down they
-  // carry 45 and 33 channels. Counting that as a regression turned the run red
-  // the moment the outage ENDED, which is precisely backwards.
+  // the ones above are healthy they are correctly empty, and when those fail
+  // they carry a great deal. Counting that as a regression turned the run red
+  // the moment an outage ENDED, which is precisely backwards. Measured, wins
+  // against what each would pick up if the source above it died:
+  //
+  //   UK extra 2      8 -> 157      US extra 2      0 -> 139
+  //   Iceland extra   1 ->  20
+  //
+  // Iceland extra is insurance for Síminn specifically, which is the most
+  // fragile source here — a page scrape, of a page that answers HTTP 500.
   "UK extra 2",
   "US extra 2",
+  "Iceland extra",
 ]);
 
 const GUIDE = "guide.xml.gz";
