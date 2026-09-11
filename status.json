@@ -1,9 +1,9 @@
 {
-  "built": "2026-09-11T14:46:32.552Z",
-  "channels": 1812,
-  "programmes": 101706,
+  "built": "2026-09-11T17:56:35.374Z",
+  "channels": 1729,
+  "programmes": 101710,
   "scheduleRunsTo": "2026-10-31T17:00:00.000Z",
-  "gzipBytes": 16490902,
+  "gzipBytes": 16491145,
   "sources": {
     "RÚV": 2,
     "Sýn": 13,
@@ -20,7 +20,7 @@
     "Denmark": 57,
     "Norway": 4,
     "Sweden": 80,
-    "Events": 1157,
+    "Events": 1074,
     "Timeshift": 8
   },
   "stale": {},
@@ -43,7 +43,7 @@
     "UK: Sky Sport Racing (SkyGo)",
     "IE:  RTE 2 FHD"
   ],
-  "overlapping": 56,
+  "overlapping": 54,
   "regressions": [],
   "zeroed": [],
   "collapsed": {}
