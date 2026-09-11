@@ -448,6 +448,22 @@ Some gaps are genuinely the source's, and some channels are simply gone:
   pointing them at the HD channel would show programmes that are not on. The two
   `HDR 4K` rows are the opposite case and are filled — see
   [the one manual list](#the-one-manual-list).
+- **`IE:  RTE 2 FHD`** is the one row measured to be advertised on two channels
+  that are not the same channel, and the cause is upstream of this build: my
+  provider maps its own `IE: RTE 2 HD` to `RTÉ 2FM.uk`, which is a radio
+  station, while `IE: RTE 2` maps to `RTE Two UK`. Both are Irish, so the
+  country scoping is working; the id-less `FHD` row normalises to the same name
+  as both and is offered to each. A player picks one, so it shows the radio
+  schedule some of the time.
+
+  Deliberately not "fixed" by picking the first: first is the radio station, so
+  a deterministic choice would be deterministically wrong. Of the 67
+  display-names that name more than one channel id, this is the only pair that
+  is two different channels — the rest are two provider ids for one real
+  channel, which is the documented fan-out and is harmless. The gate counts
+  them and records the number in `status.json`, so the day that stops being
+  true shows up as a diff.
+
 - **Skjár 1** publishes no schedule. Its dagskrá page is a policy statement —
   films with Icelandic subtitles at 5, 7, 9 and 11 daily — with no titles
   anywhere. Synthesising "Kvikmynd" blocks would be the same filler this build

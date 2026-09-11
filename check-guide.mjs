@@ -9,7 +9,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 
-import { HOUR_MS, PROGRAMME, attr, hours, mb, parseTime } from "./epg-xml.mjs";
+import { CHANNEL, DISPLAY_NAME, HOUR_MS, PROGRAMME, attr, hours, mb, parseTime } from "./epg-xml.mjs";
 
 // Writing status.json is how the next run gets its baseline, so it happens only
 // when CI asks for it. Otherwise running this by hand would overwrite the
@@ -48,6 +48,20 @@ for (const [, id] of xml.matchAll(/<channel id="([^"]*)"/g)) {
   declared.add(id);
 }
 
+// The same worry one level down: a display-name on two channel ids is a name a
+// player also picks between. Counted rather than failed, because most of them
+// are two ids for one real channel — see the README — and recorded in
+// status.json, which is committed, so growth shows up as a diff.
+const namedBy = new Map();
+for (const [element] of xml.matchAll(CHANNEL)) {
+  const id = attr(element, "id");
+  for (const [, name] of element.matchAll(DISPLAY_NAME)) {
+    const key = name.trim();
+    namedBy.set(key, (namedBy.get(key) ?? new Set()).add(id));
+  }
+}
+const sharedNames = [...namedBy.values()].filter((ids) => ids.size > 1).length;
+
 // Counted without materialising anything: the guide has hundreds of thousands
 // of programmes, and Math.max(...stops) would overflow the call stack.
 //
@@ -72,6 +86,7 @@ const hoursAhead = (latest - Date.now()) / HOUR_MS;
 console.log(`${GUIDE}: ${mb(bytes.length)} gzipped`);
 console.log(`channels:   ${channels} (floor ${MIN_CHANNELS}), ${declared.size} distinct ids`);
 console.log(`programmes: ${programmes} (floor ${MIN_PROGRAMMES}), ${invalid} invalid, ${orphaned} orphaned`);
+console.log(`names on more than one channel: ${sharedNames}`);
 console.log(
   Number.isFinite(latest)
     ? `schedule runs to ${new Date(latest).toISOString()}, ${hoursAhead.toFixed(1)}h ahead (floor ${MIN_HOURS_AHEAD}h)`
@@ -148,6 +163,7 @@ writeFileSync(
       gzipBytes: bytes.length,
       sources: counts,
       stale,
+      sharedNames,
     },
     null,
     2

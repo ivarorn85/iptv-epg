@@ -156,6 +156,12 @@ const buildIndex = (channels) => {
   // is the same channel packaged differently — a backup feed, a P50 variant, an
   // app duplicate. My provider says so itself by naming them alike, so the
   // id-less one is advertised on the channel its sibling already reaches.
+  //
+  // One donor per name, first seen, where every other index here holds a set.
+  // That is a choice, not an oversight: where several ids share a name, letting
+  // the orphan inherit from all of them would advertise one name on several
+  // channels, and a player then picks between them. One channel, even if a
+  // better sibling existed, beats a name that means two things.
   const donors = new Map();
   const orphans = [];
   const inherited = new Map();
@@ -388,6 +394,9 @@ const merge = (label, { channels: produced, programmes }) => {
     if (!emitted.has(channel)) continue;
     allProgrammes.push(element);
     // Kept per channel as well, so a "+1" channel can be built from its base.
+    // These are the same strings allProgrammes holds, not copies, so the cost
+    // is the array slots and not the text — which is why this does not
+    // contradict the note above about never holding a source's programmes.
     if (!programmesByChannel.has(channel)) programmesByChannel.set(channel, []);
     programmesByChannel.get(channel).push(element);
   }
