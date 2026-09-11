@@ -100,7 +100,9 @@ can never steal a channel that something else matched precisely.
   match, so the ordinal in `.us2` is dropped — it names the file, not the
   country.
 - Channel name: strip everything that is not a letter or digit and lowercase, so
-  `IS: RUV FHD` becomes `isruvfhd`. Icelandic characters survive. `+` becomes
+  `IS: RUV FHD` becomes `isruvfhd`. Icelandic characters survive here; the
+  looser key in pass 2 folds the accents off, because the two sides disagree
+  about them. `+` becomes
   the word `plus`, because it is the only thing separating `TV3+` from `TV3` —
   without that, Danish TV3's schedule lands on TV3+ as well.
 - Then the same against each `<display-name>` in the source.
@@ -352,8 +354,8 @@ changed its ids or its naming.
 | ------------- | -------- | -------------------------------------------------- |
 | RÚV           | 2        | RÚV and RÚV 2, from ruv.is                         |
 | Sýn           | 13       | the whole Sýn family, from syn.is                  |
-| Síminn        | 21       | the Icelandic schedule for the foreign feeds       |
-| Iceland extra | 2        | most of what it used to serve is now Síminn's      |
+| Síminn        | 22       | Sjónvarp Símans, and the Icelandic schedule for the foreign feeds |
+| Iceland extra | 1        | Sky News; the rest is now Síminn's                 |
 | Iceland       | 4        | Sjónvarp Símans, Samstöðin, KVF                    |
 | UK extra      | 196      | iptv-epg, first for UK: 5.4 days against UK1's 2.4 |
 | UK            | 25       | epgshare UK1, filling what iptv-epg lacks          |
