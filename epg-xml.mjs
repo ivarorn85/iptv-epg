@@ -20,6 +20,9 @@ export const attr = (element, name) => {
 export const escapeAttr = (s) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 
+// Shared so the four places that shift or measure an hour agree on one number.
+export const HOUR_MS = 3_600_000;
+
 export const mb = (bytes, digits = 1) => `${(bytes / 1048576).toFixed(digits)} MB`;
 
 // Cache ages, in hours: a copy standing in for a failed source is usually less

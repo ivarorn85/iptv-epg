@@ -1,6 +1,11 @@
 // Builds one merged XMLTV guide whose channel ids match my provider's, so
-// TiviMate fills the grid with no per-channel mapping. Five matching passes,
-// in falling order of confidence — the README explains why each one exists.
+// TiviMate fills the grid with no per-channel mapping. Fetched sources are
+// matched to it in five passes of falling confidence, and two more producers
+// derive what no source publishes — the README explains why each one exists.
+//
+// This file holds the source list, the matching, and the run itself. The
+// producers that generate a guide rather than match one live in their own
+// modules: iceland.mjs, events.mjs, timeshift.mjs.
 //
 // Local:  XTREAM_HOST=... XTREAM_USER=... XTREAM_PASS=... node build-epg.mjs
 // CI:     driven by .github/workflows/build-epg.yml
@@ -20,12 +25,12 @@ import {
   hours,
   isPlaceholder,
   mb,
-  xmltvChannel,
 } from "./epg-xml.mjs";
 import { EVENT_NAME, eventGuide } from "./events.mjs";
 import { getJson, request } from "./http.mjs";
 import { ruvGuide, synGuide } from "./iceland.mjs";
-import { baseKey, bodyOf, ccOf, idKey, nameKey, scopedBaseKey, scopedKey } from "./keys.mjs";
+import { baseKey, bodyOf, ccOf, idKey, nameKey, providerCc, scopedBaseKey, scopedKey } from "./keys.mjs";
+import { timeshiftGuide } from "./timeshift.mjs";
 
 const EPGSHARE = "https://epgshare01.online/epgshare01/epg_ripper_";
 const IPTVEPG = "https://iptv-epg.org/files/epg-";
@@ -82,8 +87,25 @@ const COUNTS = "counts.json";
 // rather than part of the name. A rule that dropped that digit would also turn
 // Sweden's TV24 into TV 2, which is a different channel — so this is a list
 // instead. Keep it short; if it grows, the rules are wrong.
-const ALSO_KNOWN_AS = {
-  "BBCOne.uk": ["UK: BBC One 1 HDR 4K", "UK: BBC One 2 HDR 4K"],
+//
+// A Map rather than an object literal, because the keys are provider ids: an id
+// of "constructor" would read a function off the prototype chain, and iterating
+// that would cost the source its whole output.
+const ALSO_KNOWN_AS = new Map([["BBCOne.uk", ["UK: BBC One 1 HDR 4K", "UK: BBC One 2 HDR 4K"]]]);
+
+// Whether the list above still describes the playlist. A hand-written table is
+// the only thing here that can silently stop applying — a renamed row or a
+// retired id makes an entry a no-op with no error anywhere — so every run says
+// so. Warns rather than fails: an entry going stale costs two channels their
+// guide, which is not worth refusing a whole publish over.
+const checkAliasList = (channels) => {
+  const ids = new Set(channels.map((ch) => ch.epg_channel_id).filter(Boolean));
+  const names = new Set(channels.map((ch) => ch.name).filter(Boolean));
+  for (const [id, aliases] of ALSO_KNOWN_AS) {
+    if (!ids.has(id)) console.error(`ALSO_KNOWN_AS: no channel carries the id "${id}" any more`);
+    for (const name of aliases)
+      if (!names.has(name)) console.error(`ALSO_KNOWN_AS: no channel is named "${name}" any more`);
+  }
 };
 
 // The largest string V8 will hold. Some of these files are close enough to it
@@ -116,15 +138,6 @@ const loadChannels = async () => {
   } catch (err) {
     throw new Error(`Xtream API: ${err.message}`);
   }
-};
-
-// My provider states the country in the channel name; fall back to the id for
-// the rows that don't carry a prefix. Only two-letter prefixes are countries,
-// while `bare` in keys.mjs strips two to four characters — "CAR:" is a label,
-// not a country, so it comes off the name without ever becoming a scope.
-const providerCc = (ch) => {
-  const prefix = /^([A-Za-z]{2})\s*:/.exec(ch.name ?? "");
-  return prefix ? prefix[1].toLowerCase() : ccOf(ch.epg_channel_id ?? "");
 };
 
 // Builds every lookup the passes below need, in one walk of the provider's
@@ -309,7 +322,7 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
   // so a schedule never reaches a same-named channel in another market.
   const withAliases = (element, labels, target) => {
     const names = aliasNames(labels, targetCc.get(target) ?? ccOf(target));
-    for (const name of ALSO_KNOWN_AS[target] ?? []) names.add(name);
+    for (const name of ALSO_KNOWN_AS.get(target) ?? []) names.add(name);
     for (const name of inherited.get(target) ?? []) names.add(name);
     if (!names.size) return element;
     const extra = [...names].map((n) => `\n    <display-name>${escapeAttr(n)}</display-name>`).join("");
@@ -349,75 +362,9 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
   return { channels, programmes };
 };
 
-const HOUR_MS = 3_600_000;
-
-// A "+1" channel is its base channel an hour later, so where the base has a
-// schedule the +1 schedule is derivable rather than fetchable. My provider
-// writes it as a trailing "1" after a double space — "UK: FILM 4  1" — which
-// is how it differs from a channel number: "UK: Coral TV 2" has one space and
-// is a different channel, not a timeshift.
-const PLUS_ONE = /\s{2,}1$/;
-
-// Advances the wall clock an hour and keeps the original offset, which is the
-// same instant either way and leaves the stamp looking like its neighbours.
-const anHourLater = (stamp) => {
-  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(.*)$/.exec(stamp);
-  if (!m) return stamp;
-  const [, year, month, day, hour, minute, second, zone] = m;
-  const at = new Date(Date.UTC(+year, +month - 1, +day, +hour, +minute, +second) + HOUR_MS);
-  const pad = (value) => String(value).padStart(2, "0");
-  return (
-    `${at.getUTCFullYear()}${pad(at.getUTCMonth() + 1)}${pad(at.getUTCDate())}` +
-    `${pad(at.getUTCHours())}${pad(at.getUTCMinutes())}${pad(at.getUTCSeconds())}${zone}`
-  );
-};
-
-// A "+1" row, built from the base channel's schedule moved an hour later.
-//
-// Copying a sibling's schedule wholesale to every other empty row was tried and
-// rejected: it filled 328 channels but added 37,000 duplicate programmes and
-// took the guide from 62 MB to 99 MB, nearly all of it rows for channels that
-// already had a schedule under a different id.
-const derivedGuide = (providerChannels, programmesByChannel) => {
-  const bases = new Map();
-  for (const ch of providerChannels) {
-    if (!ch.name || !programmesByChannel.has(ch.epg_channel_id)) continue;
-    const key = scopedBaseKey(providerCc(ch), ch.name);
-    if (key && !bases.has(key)) bases.set(key, ch.epg_channel_id);
-  }
-
-  const channels = [];
-  const programmes = [];
-  const taken = new Set();
-
-  for (const ch of providerChannels) {
-    if (!ch.name || !PLUS_ONE.test(ch.name)) continue;
-    if (programmesByChannel.has(ch.epg_channel_id)) continue; // has a schedule of its own
-    const base = bases.get(scopedBaseKey(providerCc(ch), ch.name.replace(PLUS_ONE, "")));
-    if (!base) continue;
-
-    // Matched by name, so the id only has to be unique. Namespaced separately
-    // from every other synthetic id, or a same-named row elsewhere takes it and
-    // this one is silently dropped.
-    const id = `plus1.${nameKey(ch.name)}`;
-    if (taken.has(id)) continue;
-    taken.add(id);
-
-    channels.push({ id, element: xmltvChannel(id, [ch.name]) });
-    for (const element of programmesByChannel.get(base))
-      programmes.push({
-        channel: id,
-        element: element
-          .replace(/\bstart="([^"]*)"/, (all, at) => `start="${anHourLater(at)}"`)
-          .replace(/\bstop="([^"]*)"/, (all, at) => `stop="${anHourLater(at)}"`)
-          .replace(/\bchannel="[^"]*"/, `channel="${escapeAttr(id)}"`),
-      });
-  }
-  return { channels, programmes };
-};
-
 const channels = await loadChannels();
 const index = buildIndex(channels);
+checkAliasList(channels);
 console.log(`provider: ${channels.length} channels, ${index.byId.size} distinct id keys\n`);
 
 const allChannels = [];
@@ -476,9 +423,10 @@ for (const source of SOURCES) {
   merge(label, produced);
 }
 
-// Pass 5, and the one producer that does not go through convert(): its
-// channels are matched by name, so there is no provider id to rewrite. Guarded
-// like the sources are, so a bad row here cannot cost the whole guide.
+// Pass 5. Like the timeshift below it this skips convert() entirely: both
+// producers emit channels found by name, so there is no provider id to rewrite
+// and nothing to match. Guarded like the sources are, so a bad row here cannot
+// cost the whole guide.
 try {
   const events = await eventGuide(channels);
   merge("Events", events);
@@ -487,8 +435,17 @@ try {
   console.error(`Events: skipped (${err.message})`);
 }
 
-// Last, because it copies from what every other source already produced.
-merge("Timeshift", derivedGuide(channels, programmesByChannel));
+// Last, because it copies from what every other producer emitted. Guarded like
+// the rest: it walks provider-supplied strings, and by this point every
+// download is already paid for, so a throw here must not cost the whole build.
+try {
+  const timeshift = timeshiftGuide(channels, programmesByChannel);
+  merge("Timeshift", timeshift);
+  if (timeshift.unshiftable)
+    console.error(`  ${timeshift.unshiftable} programmes dropped: their stamps would not shift`);
+} catch (err) {
+  console.error(`Timeshift: skipped (${err.message})`);
+}
 
 const xml =
   '<?xml version="1.0" encoding="UTF-8"?>\n' +

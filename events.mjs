@@ -13,11 +13,9 @@
 // XMLTV text, because there is nothing to match: the channel is emitted under
 // its own id and found by name.
 
-import { xmltvChannel, xmltvProgramme } from "./epg-xml.mjs";
+import { HOUR_MS, xmltvChannel, xmltvProgramme } from "./epg-xml.mjs";
 import { getJson } from "./http.mjs";
 import { nameKey } from "./keys.mjs";
-
-const HOUR_MS = 3_600_000;
 
 export const EVENT_NAME = /^\[(?:[^\]]+)\]\s*\((\d{1,2})\/(\d{1,2})\)\s*(\d{1,2}):(\d{2})\s+(\S.*)$/;
 
@@ -30,6 +28,15 @@ const ASSUMED_HOURS = 3;
 const PLAUSIBLE_DAYS = 60;
 // How far ahead to ask Viaplay for real end times.
 const HORIZON_DAYS = 10;
+
+// Real end times are a refinement, not the schedule, so the walk that fetches
+// them gets a fixed share of the run and no more. Without this an unresponsive
+// Viaplay costs the whole job: the walk is dozens of requests, each of which
+// may retry, which together outlast the workflow's own timeout — and an
+// upstream failing is supposed to cost that upstream's contribution, not the
+// guide. Individual requests are kept short for the same reason.
+const VIAPLAY_BUDGET_MS = 120_000;
+const VIAPLAY_REQUEST = { timeoutMs: 15_000, attempts: 2 };
 
 // A day and month with no year means the year that puts the date nearest today.
 const eventStart = (day, month, hour, minute) => {
@@ -64,10 +71,12 @@ const viaplayEnds = async (days) => {
       }
   };
 
-  for (let day = 0; day < days; day++) {
+  const deadline = Date.now() + VIAPLAY_BUDGET_MS;
+
+  for (let day = 0; day < days && Date.now() < deadline; day++) {
     const date = new Date(Date.now() + day * 24 * HOUR_MS).toISOString().slice(0, 10);
     try {
-      const page = await getJson(`${VIAPLAY_SPORT}?date=${date}`);
+      const page = await getJson(`${VIAPLAY_SPORT}?date=${date}`, VIAPLAY_REQUEST);
       const blocks = page._embedded?.["viaplay:blocks"] ?? [];
       collect(blocks);
 
@@ -76,12 +85,14 @@ const viaplayEnds = async (days) => {
       for (const block of blocks) {
         const href = block._links?.self?.href;
         for (let number = 2; href && number <= (block.pageCount ?? 1); number++) {
-          const more = await getJson(href.replace(/pageNumber=\d+/, `pageNumber=${number}`));
+          if (Date.now() > deadline) break;
+          const url = href.replace(/pageNumber=\d+/, `pageNumber=${number}`);
+          const more = await getJson(url, VIAPLAY_REQUEST);
           collect(more._embedded?.["viaplay:blocks"] ?? [more]);
         }
       }
     } catch {
-      // Viaplay being unreachable just means the fixed block stands.
+      // Viaplay being unreachable just means the assumed block stands.
     }
   }
   return ends;

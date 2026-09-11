@@ -20,6 +20,16 @@ export const idKey = (id) => {
 export const ccOf = (id) => splitId(id).cc;
 export const bodyOf = (id) => splitId(id).body;
 
+// The country of one of my provider's own rows. It states the country in the
+// channel name, so that is read first, with the id as the fallback for rows
+// carrying no prefix. Only a two-letter prefix is a country, while `bare`
+// below strips two to four characters — "CAR:" is a label, not a country, so
+// it comes off the name without ever becoming a scope.
+export const providerCc = (ch) => {
+  const prefix = /^([A-Za-z]{2})\s*:/.exec(ch.name ?? "");
+  return prefix ? prefix[1].toLowerCase() : ccOf(ch.epg_channel_id ?? "");
+};
+
 // "IS: RUV FHD" -> "isruvfhd". "+" becomes a word rather than vanishing,
 // because it is the only thing that tells "TV3+" from "TV3".
 export const nameKey = (name) =>

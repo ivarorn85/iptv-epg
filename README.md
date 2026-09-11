@@ -225,6 +225,12 @@ row, and matched it wrongly: Sweden's `TV24 UHD` became `TV 2`, a different
 channel. So this is a list instead. Keep it short — if it grows, the rules are
 wrong.
 
+Being hand-written, it is also the one thing here that can stop applying with no
+error anywhere: a renamed row or a retired id turns an entry into a silent
+no-op. So every run checks each entry against the playlist and says so in the
+log if an id or a name has gone. A warning, not a failure — a stale entry costs
+two channels their guide, which is not worth refusing a publish over.
+
 ### Two things that look like bugs and are not
 
 My provider gives every quality variant of a channel the same
@@ -362,8 +368,16 @@ well-formed, completely stale file.
 Those are totals, though, so they cannot see one source dying while the others
 hold the numbers up — UK1 vanishing entirely still clears every one of them. So
 each run also records its per-source counts, and the next run refuses to publish
-if a source that was carrying 20 or more channels now carries none. That needs
-no threshold to maintain: `status.json` is the baseline and it updates itself.
+if a source that produced something last run produces nothing now. That needs no
+threshold to maintain: `status.json` is the baseline and it updates itself.
+
+At any size, deliberately. It used to take 20 channels before a source counted,
+which left RÚV (2 channels), Iceland (4), Norway (4) and Timeshift (6) able to
+break silently and permanently — RÚV being both first-party and irreplaceable.
+The threshold was there to absorb transient fetch failures, and those no longer
+reach the gate: a source that fails keeps its count from cache. `Events` is the
+one exemption, because it is read from the playlist's current fixtures and
+swings by hundreds between runs by design.
 
 When a refusal happens the last good release stays up, so the grid keeps working
 while you look into it.
@@ -464,11 +478,12 @@ No dependencies. Needs Node 18 or newer; CI runs 22.
 `node --test`, run by CI before the build so a break stops the run rather than
 publishing quietly. No dependencies — `node:test` is built in.
 
-They cover the pure logic only: the keys, the XMLTV emitters, and the event-name
-parsing. That is deliberate. Those are the places where a mistake produces a
-_wrong schedule on a real channel_ instead of an error, and every case in there
-is one that actually went wrong at some point or that a plausible tidy-up would
-break:
+They cover the logic that can be run without the network: the keys, the XMLTV
+emitters, the event-name parsing, the retry rules, the cache fallback, and the
+timeshift arithmetic. That is deliberate. Those are the places where a mistake
+produces a _wrong schedule on a real channel_ instead of an error, and every
+case in there is one that actually went wrong at some point or that a plausible
+tidy-up would break:
 
 - `+` surviving as a word, so Danish TV3's schedule stays off TV3+
 - the `.us2` ordinal counting as the file's name and not the country's
@@ -481,13 +496,25 @@ break:
 - `(12/9)` reading as 12 September, not 9 December
 - "The Help" and "Help! My House Is Haunted" not counting as filler, which a
   substring match would have eaten
+- a timeshift stamp that will not parse being dropped rather than copied
+  unshifted, which would publish a whole day an hour wrong
+- `UK: FILM 4  1` reading as a timeshift where `UK: Coral TV 2` does not
+- a cached copy with no future schedule left in it being refused, so a failed
+  source cannot be papered over with channels that only look filled
+- a 4xx never being retried, because asking again gets the same answer
 
 One test asserts a _limitation_ rather than a feature: epgshare's Norwegian
 names carry the country as a word, which no normalisation strips, so they never
 meet my provider's. It is recorded because it looks like a matching bug.
 
-The network-facing parts have no tests and are verified by the run itself — the
-per-source counts in the log and the gate that reads the finished file.
+What no unit test can see is the finished file, where every producer's output
+meets every other's, so the gate checks the three hard requirements there
+instead: no channel id declared twice, no programme ending before it starts, and
+no programme naming a channel the guide never declares. All three have been zero
+on every run, and any of them becoming non-zero refuses the publish.
+
+The fetching itself is verified by the run — the per-source counts in the log,
+compared against the last published run.
 
 ## Measured and rejected
 
