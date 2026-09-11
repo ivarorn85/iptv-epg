@@ -272,7 +272,20 @@ provider sometimes has two ids for one channel — `TNT Sports 3.uk` alongside
 | **epg.pw** `epg_GB`, `epg_US`   | 45 UK and 33 US gap channels  | The only source measured to recover any of what iptv-epg.org's outage cost                |
 | iptv-epg.org `epg-gb`, `epg-us` | UK and US gap-fillers         | Cover channels epgshare has no entry for at all                                           |
 
-The first source to claim a channel wins, so the order is the design. The table
+The first source to claim a channel wins, so the order is the design — and it
+answers two questions in turn. Above UK, it is about being **right**: first
+party beats an aggregator, and an Icelandic row gets the Icelandic schedule
+rather than a Nordic neighbour's. Between two sources equally entitled to a
+channel, it is about being **deep**, which is why iptv-epg sits ahead of
+epgshare for UK and US: measured per channel, epgshare runs 2.4 days ahead for
+UK and 2.6 for US where iptv-epg runs 5.4 and 6.2. That ordering carries 24,000
+more programmes for the same channels and takes 277 of them off a guide of less
+than three days.
+
+Depth never overrides correctness, and it is not decided per channel at run
+time — a rule that simply preferred whichever source had more would let Sweden
+outbid Síminn for an Icelandic row, which is the one thing the order exists to
+prevent. The table
 above groups the six epgshare files into one row for brevity; in `SOURCES` they
 are interleaved, each gap-filler sitting directly after the epgshare file for its
 country. `SOURCES` is the authority on order.
@@ -335,25 +348,27 @@ Worth knowing before editing the list:
 Baseline from a verified run. A source dropping sharply means its upstream
 changed its ids or its naming.
 
-| Source        | Channels | Note                                          |
-| ------------- | -------- | --------------------------------------------- |
-| RÚV           | 2        | RÚV and RÚV 2, from ruv.is                    |
-| Sýn           | 13       | the whole Sýn family, from syn.is             |
-| Síminn        | 21       | the Icelandic schedule for the foreign feeds  |
-| Iceland extra | 19       | the Icelandic international channels          |
-| Iceland       | 4        | Sjónvarp Símans, Samstöðin, KVF               |
-| UK            | 171      |                                               |
-| UK extra      | 66       | Sky Cinema, Sky Atlantic, E4, a plain BBC One |
-| US            | 142      |                                               |
-| US sports     | 30       | NHL team feeds, all matched by name           |
-| US extra      | 64       | A&E, CBS, HGTV, Food Network, beIN Sports 4-8 |
-| Denmark       | 58       |                                               |
-| Norway        | 4        | see the note below                            |
-| Sweden        | 81       |                                               |
-| Events        | ~1,000   | read out of channel names, not fetched        |
-| Timeshift     | 6        | "+1" rows, derived from their base channel    |
+| Source        | Channels | Note                                               |
+| ------------- | -------- | -------------------------------------------------- |
+| RÚV           | 2        | RÚV and RÚV 2, from ruv.is                         |
+| Sýn           | 13       | the whole Sýn family, from syn.is                  |
+| Síminn        | 21       | the Icelandic schedule for the foreign feeds       |
+| Iceland extra | 2        | most of what it used to serve is now Síminn's      |
+| Iceland       | 4        | Sjónvarp Símans, Samstöðin, KVF                    |
+| UK extra      | 196      | iptv-epg, first for UK: 5.4 days against UK1's 2.4 |
+| UK            | 25       | epgshare UK1, filling what iptv-epg lacks          |
+| US extra      | 189      | iptv-epg, first for US: 6.2 days against US2's 2.6 |
+| US            | 15       | epgshare US2, filling what iptv-epg lacks          |
+| US sports     | 30       | NHL team feeds, all matched by name                |
+| UK extra 2    | 8        | epg.pw standby — 45 while iptv-epg is down         |
+| US extra 2    | 0        | epg.pw standby — 33 while iptv-epg is down         |
+| Denmark       | 57       |                                                    |
+| Norway        | 4        | see the note below                                 |
+| Sweden        | 80       |                                                    |
+| Events        | ~600     | read out of channel names, not fetched             |
+| Timeshift     | 8        | "+1" rows, derived from their base channel         |
 
-About 1,700 channels and 79,500 programmes: 7.9 MB gzipped, 62 MB raw, which is
+About 1,800 channels and 102,000 programmes: 16 MB gzipped, 83 MB raw, which is
 comfortably under the size that chokes TiviMate. `Events` moves between runs by
 design — it is read from the playlist's current fixtures, and finished ones are
 dropped, so a swing of a hundred either way is normal and not a regression.

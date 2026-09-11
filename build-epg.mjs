@@ -50,16 +50,26 @@ const SOURCES = [
   // still does the heavy lifting and picks those up next.
   { label: "Iceland extra", url: `${IPTVEPG}is.xml.gz` },
   { label: "Iceland", url: "https://is-epg.run.place/iptv/guide3.xml", passthrough: true },
-  { label: "UK", url: `${EPGSHARE}UK1.xml.gz` },
-  // Fills what UK1 has no entry for at all: Sky Sports F1, the Sky Cinema
-  // channels, Sky Atlantic, E4, More 4, and a plain BBC One.
+  // iptv-epg ahead of epgshare for UK and US, which is a deliberate reversal.
+  // The order above this point is about being RIGHT — first party, and the
+  // right market. Between two sources equally entitled to a channel it is
+  // about being DEEP, and these two are not close: measured per channel,
+  // epgshare runs 2.4 days ahead for UK and 2.6 for US where iptv-epg runs 5.4
+  // and 6.2. Ordered this way the guide carries 24,000 more programmes for the
+  // same channels, and 277 of them stop having less than three days of
+  // schedule.
+  //
+  // It costs reliability nothing, because falling through IS the fallback: when
+  // iptv-epg was down for a day and a half, epgshare — now second — simply
+  // claimed those channels instead, which is what it did for months as the
+  // first choice. epg-us is also 500 MB uncompressed, within 3% of the largest
+  // string Node can hold, and will start being skipped once it outgrows that;
+  // epgshare behind it is what carries US if that happens.
   { label: "UK extra", url: `${IPTVEPG}gb.xml.gz` },
+  { label: "UK", url: `${EPGSHARE}UK1.xml.gz` },
+  { label: "US extra", url: `${IPTVEPG}us.xml.gz` },
   { label: "US", url: `${EPGSHARE}US2.xml.gz` },
   { label: "US sports", url: `${EPGSHARE}US_SPORTS1.xml.gz` },
-  // 500 MB uncompressed, within 3% of the largest string Node can hold. It is
-  // late because it only fills leftovers, and it will start being skipped once
-  // it outgrows that ceiling — see the size check in fetchSource.
-  { label: "US extra", url: `${IPTVEPG}us.xml.gz` },
   // Added after iptv-epg.org went down for a day and a half and took 135
   // channels with it. Gap-fillers, not replacements: they sit after the sources
   // above and take only what is still unclaimed, which is 45 UK and 33 US
