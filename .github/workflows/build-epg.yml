@@ -59,7 +59,12 @@ jobs:
           XTREAM_PASS: ${{ secrets.XTREAM_PASS }}
           # epg-us is 500 MB uncompressed; don't leave the heap to chance.
           NODE_OPTIONS: --max-old-space-size=6144
-        run: node build-epg.mjs
+        run: |
+          # Before the build, not by it: the save step below refuses a path that
+          # does not exist, and on a cold start with a failing first source
+          # nothing would have created it.
+          mkdir -p cache
+          node build-epg.mjs
 
       # Immediately after the build and regardless of what follows: a run whose
       # guide the gate then refuses still fetched sources that worked, and
