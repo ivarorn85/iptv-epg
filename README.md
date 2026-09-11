@@ -30,11 +30,14 @@ TiviMate succeeds on step one and never has to guess.
    build-epg.mjs        source list, matching passes, merge, main
    iceland.mjs          the two Icelandic broadcasters' JSON APIs
    events.mjs           per-event channels read out of their own names
+   timeshift.mjs        "+1" channels, derived from their base channel
+   cache.mjs            each source's last good output, for when one fails
    keys.mjs             how a channel on one side is matched to the other
-   epg-xml.mjs          shared XMLTV shapes and emitters
-   http.mjs             one place for the User-Agent and request timeouts
-   test/                one file per module, run with `node --test`
+   epg-xml.mjs          shared XMLTV shapes, emitters and small helpers
+   http.mjs             one place for the User-Agent, timeouts and retries
    check-guide.mjs      the publish gate
+   test/                run with `node --test`; no test runner to install
+   status.json          what the last run published — the gate's baseline
    README.md
    .gitignore
    .gitattributes       keeps the guide binary and the sources LF
@@ -189,7 +192,7 @@ SE: V Series FHD              <- SE: V Series HD               V series HD (T).s
 
 So the id-less row's name is advertised on the channel its sibling already
 reaches — backup feeds, P50 variants and app duplicates all resolve without a
-single hand-written mapping. That is 319 rows. Per-event channels are excluded,
+single hand-written mapping. That is 438 rows across 199 donor channels. Per-event channels are excluded,
 being the event pass's job.
 
 ### "+1" channels, derived rather than fetched
@@ -308,16 +311,17 @@ changed its ids or its naming.
 | Iceland extra | 19       | the Icelandic international channels          |
 | Iceland       | 4        | Sjónvarp Símans, Samstöðin, KVF               |
 | UK            | 171      |                                               |
-| UK extra      | 65       | Sky Sports F1, Sky Cinema, Sky Atlantic, E4   |
+| UK extra      | 66       | Sky Cinema, Sky Atlantic, E4, a plain BBC One  |
 | US            | 142      |                                               |
 | US sports     | 30       | NHL team feeds, all matched by name           |
 | US extra      | 64       | A&E, CBS, HGTV, Food Network, beIN Sports 4-8 |
-| Denmark       | 59       |                                               |
+| Denmark       | 58       |                                               |
 | Norway        | 4        | see the note below                            |
 | Sweden        | 81       |                                               |
-| Events        | ~850     | read out of channel names, not fetched        |
+| Events        | ~1,000   | read out of channel names, not fetched        |
+| Timeshift     | 6        | "+1" rows, derived from their base channel    |
 
-About 1,500 channels and 78,000 programmes: 7.6 MB gzipped, 62 MB raw, which is
+About 1,700 channels and 79,500 programmes: 7.9 MB gzipped, 62 MB raw, which is
 comfortably under the size that chokes TiviMate. `Events` moves between runs by
 design — it is read from the playlist's current fixtures, and finished ones are
 dropped, so a swing of a hundred either way is normal and not a regression.
@@ -328,7 +332,7 @@ is stripped, the trailing word is not, so it never meets my provider's
 `NO: Animal Planet`. Denmark avoids this only because its provider names match
 cleanly on their own.
 
-That reaches **3,898 of the 8,806** playlist rows that carry an
+That reaches **3,901 of the 8,806** playlist rows that carry an
 `epg_channel_id`, plus roughly a thousand more that carry none and are picked up
 by name or by the event pass. The remaining two thirds of the playlist — about
 20,000 rows — have no id _and_ no published schedule anywhere: the
@@ -367,11 +371,29 @@ well-formed, completely stale file.
 
 Those are totals, though, so they cannot see one source dying while the others
 hold the numbers up — UK1 vanishing entirely still clears every one of them. So
-each run also records its per-source counts, and the next run refuses to publish
-if a source that produced something last run produces nothing now. That needs no
-threshold to maintain: `status.json` is the baseline and it updates itself.
+each run also records its per-source counts, and compares them with the last
+published run. That needs no threshold to maintain: `status.json` is the
+baseline and it updates itself.
 
-At any size, deliberately. It used to take 20 channels before a source counted,
+A source dying does **not** stop the publish, though, and that is deliberate.
+The guide goes out, the baseline is recorded, and a final workflow step turns
+the run red for what was recorded — so you get the failure mail while the
+channels that still work get fresh data.
+
+Refusing used to seem safer and was worse. The baseline is only written on a
+run that publishes, so a refusal pinned it: the same refusal fired again the
+next run, and the next, and the build stayed red until someone hand-edited
+`status.json`. Meanwhile the release it was protecting went stale — and most of
+these upstreams publish under four days ahead (measured: UK1 2.8 days, US2 3.1,
+Norway 2.6, Denmark 3.9, Sweden 4.2), so "the last good release stays up" is
+worth about three days before the grid is empty anyway.
+
+Because the failure only fires on the run a source *changed*, the report also
+lists every source still carrying nothing, on every run, and anything whose
+matching collapsed without reaching zero. A source that breaks and stays broken
+says so until it is fixed.
+
+The zero rule applies at any size, deliberately. It used to take 20 channels before a source counted,
 which left RÚV (2 channels), Iceland (4), Norway (4) and Timeshift (6) able to
 break silently and permanently — RÚV being both first-party and irreplaceable.
 The threshold was there to absorb transient fetch failures, and those no longer
@@ -468,9 +490,10 @@ Some gaps are genuinely the source's, and some channels are simply gone:
   films with Icelandic subtitles at 5, 7, 9 and 11 daily — with no titles
   anywhere. Synthesising "Kvikmynd" blocks would be the same filler this build
   strips out of iptv-epg.org.
-- **UK1 carries no Sky Sports F1**, and only regional
-  `BBC.One.Yorks.HD.uk`-style variants rather than a plain BBC One. `UK extra`
-  is what fills both.
+- **UK1 carries only regional `BBC.One.Yorks.HD.uk` variants**, never a plain
+  BBC One, which is why `UK extra` is in the list. (An earlier version of this
+  note also claimed UK1 has no Sky Sports F1; it does — `SkySp F1 HD.uk`, with
+  a real schedule.)
 
 To try matching changes without waiting for CI:
 
@@ -525,9 +548,14 @@ meet my provider's. It is recorded because it looks like a matching bug.
 
 What no unit test can see is the finished file, where every producer's output
 meets every other's, so the gate checks the three hard requirements there
-instead: no channel id declared twice, no programme ending before it starts, and
-no programme naming a channel the guide never declares. All three have been zero
-on every run, and any of them becoming non-zero refuses the publish.
+instead: no channel id declared twice, no programme ending before it starts, no
+programme naming a channel the guide never declares, and no programme listed
+twice in the same slot. Any of them becoming non-zero refuses the publish.
+
+The last of the four was added after being measured at **391** in a published
+run — UK1 publishes Sky Kids twice, every programme of it, and guide3 repeats a
+handful of Icelandic rows. The builder drops them now, so the gate reads zero;
+it had been shipping in every release before that.
 
 The fetching itself is verified by the run — the per-source counts in the log,
 compared against the last published run.

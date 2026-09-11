@@ -25,7 +25,7 @@ import {
   hours,
   mb,
   parseTime,
-  titleOf,
+  slotKey,
 } from "./epg-xml.mjs";
 
 // Writing status.json is how the next run gets its baseline, so it happens only
@@ -62,15 +62,31 @@ const COUNTS = "counts.json";
 // step is deliberately able to work after the guide has been published and the
 // workspace moved on.
 if (process.argv.includes(REGRESSIONS)) {
-  const recorded = readJson(STATUS)?.regressions ?? [];
-  if (!recorded.length) {
-    console.log("no source regressed in the run just published");
+  const published = readJson(STATUS) ?? {};
+  const broke = published.regressions ?? [];
+  const empty = published.zeroed ?? [];
+  const thin = Object.entries(published.collapsed ?? {});
+
+  // A source that breaks fails the run once, on the run it broke: after that
+  // the baseline records the zero and the transition never fires again. So
+  // what is still empty gets printed every run too, along with anything that
+  // collapsed without reaching zero. Reporting "no source regressed" while
+  // three of them sat dead was worse than saying nothing at all.
+  for (const label of empty) console.log(`still carrying nothing: "${label}"`);
+  for (const [label, { now, held }] of thin)
+    console.log(`"${label}" matched ${now} channels; its cached copy holds ${held}`);
+
+  if (!broke.length && !thin.length) {
+    console.log(empty.length ? "nothing newly broken" : "every source is carrying channels");
     process.exit(0);
   }
-  console.error("a source regressed in the run just published:");
-  for (const regression of recorded) console.error(`  - ${regression}`);
+
+  console.error("\nthis run needs looking at:");
+  for (const regression of broke) console.error(`  - ${regression}`);
+  for (const [label, { now, held }] of thin)
+    console.error(`  - source "${label}" collapsed to ${now} channels from ${held}`);
   console.error(
-    "\nthe guide is live and the rest of the grid is fresh — this is the signal to look at that source"
+    "\nthe guide is live and the rest of the grid is fresh — this is a signal, not an outage"
   );
   process.exit(1);
 }
@@ -82,24 +98,29 @@ const xml = gunzipSync(bytes).toString("utf8");
 // Read through attr(), not a pattern that assumes id comes first: a source is
 // free to write <channel lang="en" id="X">, and counting every programme on
 // that channel as orphaned would refuse the publish over attribute order.
-const declared = new Set();
-let channels = 0;
-for (const [element] of xml.matchAll(CHANNEL)) {
-  channels++;
-  declared.add(attr(element, "id"));
-}
-
+//
 // The same worry one level down: a display-name on two channel ids is a name a
 // player also picks between. Counted rather than failed, because most of them
 // are two ids for one real channel — see the README — and recorded in
 // status.json, which is committed, so growth shows up as a diff.
+//
+// One walk of the whole string for both, since it can be 62 MB.
+const declared = new Set();
 const namedBy = new Map();
+let channels = 0;
+let unidentified = 0;
 for (const [element] of xml.matchAll(CHANNEL)) {
+  channels++;
   const id = attr(element, "id");
-  for (const [, name] of element.matchAll(DISPLAY_NAME)) {
-    const key = name.trim();
-    namedBy.set(key, (namedBy.get(key) ?? new Set()).add(id));
+  // Counted rather than added to the set, where a null would read as a
+  // duplicate id and report itself with the wrong message.
+  if (id === null) {
+    unidentified++;
+    continue;
   }
+  declared.add(id);
+  for (const [, name] of element.matchAll(DISPLAY_NAME))
+    namedBy.set(name.trim(), (namedBy.get(name.trim()) ?? new Set()).add(id));
 }
 const sharedNames = [...namedBy.values()].filter((ids) => ids.size > 1).length;
 
@@ -126,7 +147,7 @@ for (const [element] of xml.matchAll(PROGRAMME)) {
   if (stop > latest) latest = stop;
   if (!(stop > start)) invalid++;
   if (!declared.has(channel)) orphaned++;
-  const slot = [channel, from, to, titleOf(element)].join("|");
+  const slot = slotKey(channel, element);
   if (slots.has(slot)) repeated++;
   else slots.add(slot);
 }
@@ -153,7 +174,8 @@ if (programmes < MIN_PROGRAMMES)
 // Zero on every run so far, and a regression to any of them would be the kind
 // that shows as a wrong grid rather than an error, so they fail the publish
 // outright rather than warning.
-if (channels !== declared.size)
+if (unidentified) failures.push(`${unidentified} channel elements carry no id at all`);
+else if (channels !== declared.size)
   failures.push(`${channels - declared.size} channel ids are declared twice — a player picks between them`);
 if (invalid)
   failures.push(`${invalid} programmes end before they start, or carry a stamp nothing can read`);
@@ -172,6 +194,7 @@ else if (hoursAhead < MIN_HOURS_AHEAD)
 const handoff = readJson(COUNTS) ?? {};
 const counts = handoff.sources ?? {};
 const stale = handoff.stale ?? {};
+const collapsed = handoff.collapsed ?? {};
 const previous = readJson(STATUS)?.sources ?? {};
 const regressions = [];
 for (const [label, before] of Object.entries(previous)) {
@@ -234,6 +257,7 @@ writeFileSync(
       sharedNames,
       regressions,
       zeroed,
+      collapsed,
     },
     null,
     2

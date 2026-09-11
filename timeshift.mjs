@@ -15,7 +15,7 @@ import { nameKey, providerCc, scopedBaseKey } from "./keys.mjs";
 // TV 2" has one space and is a different channel, not a timeshift. Anchored at
 // the end, so "UK: GOLD  1 HD" is not recognised; that is a miss rather than
 // wrong data, and no row in the playlist is written that way today.
-const PLUS_ONE = /\s{2,}1$/;
+export const PLUS_ONE = /\s{2,}1$/;
 
 // Advances the wall clock an hour and keeps the original offset, which is the
 // same instant either way and leaves the stamp looking like its neighbours.

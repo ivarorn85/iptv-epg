@@ -75,9 +75,16 @@ export const xmltvProgramme = ({ channel, start, stop, title, desc, categories =
 const PLACEHOLDER =
   /^(no data|no event today|no information|no programme|tba|to be announced|n\/a|-|dagskrárlok)$/i;
 
-// The programme's title, or "" — used both to spot filler and, in the merge,
-// to tell one programme from another in the same slot.
+// The programme's title, or "" — used both to spot filler and, below, to tell
+// one programme from another in the same slot.
 export const titleOf = (element) => (TITLE.exec(element) ?? [])[1]?.trim() ?? "";
+
+// What makes two programmes the same programme: one channel, one slot, one
+// title. The builder drops a repeat and the gate refuses a guide that still
+// contains one, so the two have to agree on the definition — which is what
+// this module is for.
+export const slotKey = (channel, element) =>
+  [channel, attr(element, "start"), attr(element, "stop"), titleOf(element)].join("|");
 
 export const isPlaceholder = (element) =>
   PLACEHOLDER.test(titleOf(element));

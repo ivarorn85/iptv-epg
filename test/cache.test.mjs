@@ -177,14 +177,30 @@ describe("save declining to overwrite", () => {
     // succeeds, matching collapses, and the fallback that could have carried
     // those channels is erased in the very run the gate is about to need it.
     save("collapse", good(100));
-    assert.equal(save("collapse", good(3)), null, "should have declined");
-    assert.equal(load("collapse").channels.length, 100);
+    const declined = save("collapse", good(3));
+    assert.equal(load("collapse").channels.length, 100, "the good copy must survive");
+    // And it says so, rather than only logging: the gate's per-source check
+    // fires at exactly zero, so this is the only thing that notices a source
+    // whose fetch works while its matching falls apart.
+    assert.deepEqual(declined, { collapsed: { now: 3, held: 100 } });
   });
 
   it("still accepts ordinary churn", () => {
     save("churn", good(100));
-    assert.ok(save("churn", good(97)), "a few channels fewer is not a collapse");
+    assert.ok(save("churn", good(97))?.stored, "a few channels fewer is not a collapse");
     assert.equal(load("churn").channels.length, 97);
+  });
+
+  it("keeps a channel matched by name, whose id the provider never owned", () => {
+    // Pass 4 and passthrough channels carry the SOURCE's id, not the
+    // provider's, and are found by display-name. The provider cannot re-point
+    // an id it does not own, so checking them against the playlist only throws
+    // them away — it cost the US sports fallback 30 of its 31 channels.
+    save("US sports", {
+      channels: [{ ...channel("NHL-Bruins.us"), fromProvider: false }],
+      programmes: [programme("NHL-Bruins.us", tomorrow())],
+    });
+    assert.equal(load("US sports", { stillKnown: new Set() }).channels.length, 1);
   });
 
   it("drops a cached channel whose id the playlist no longer carries", () => {
@@ -193,7 +209,10 @@ describe("save declining to overwrite", () => {
     // it puts one channel's schedule on another — the one thing this project
     // treats as worse than an empty row.
     save("US", {
-      channels: [channel("kept.us"), channel("retired.us")],
+      channels: [
+        { ...channel("kept.us"), fromProvider: true },
+        { ...channel("retired.us"), fromProvider: true },
+      ],
       programmes: [programme("kept.us", tomorrow()), programme("retired.us", tomorrow())],
     });
 

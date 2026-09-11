@@ -26,13 +26,13 @@ import {
   isPlaceholder,
   mb,
   parseTime,
-  titleOf,
+  slotKey,
 } from "./epg-xml.mjs";
 import { EVENT_NAME, eventGuide } from "./events.mjs";
 import { getJson, request } from "./http.mjs";
 import { ruvGuide, synGuide } from "./iceland.mjs";
 import { baseKey, bodyOf, ccOf, idKey, nameKey, providerCc, scopedBaseKey, scopedKey } from "./keys.mjs";
-import { timeshiftGuide } from "./timeshift.mjs";
+import { PLUS_ONE, timeshiftGuide } from "./timeshift.mjs";
 
 const EPGSHARE = "https://epgshare01.online/epgshare01/epg_ripper_";
 const IPTVEPG = "https://iptv-epg.org/files/epg-";
@@ -114,22 +114,26 @@ const checkAliasList = (channels) => {
 // that saying so beats an ERR_STRING_TOO_LONG stack trace in the log.
 const MAX_STRING = 0x1fffffe8;
 
-// One wall-clock budget for all the downloading, rather than a per-request
-// timeout that multiplies. Thirteen sources, three attempts each and a
-// three-minute timeout is ninety minutes of worst case against a twenty-minute
-// job, so a couple of hung hosts would cost the whole run — which is the
-// opposite of the rule that an unreachable upstream costs only its own source.
-// A source that finds the budget spent fails fast and falls back to its cached
-// copy, which is exactly what that copy is for. The happy path is ~4 minutes.
+// One wall-clock budget for all the fetching, rather than per-request timeouts
+// that multiply. Twelve sources at two attempts and a three-minute timeout is
+// over an hour of worst case against a twenty-minute job, so two hung hosts
+// would cost the whole run — the opposite of the rule that an unreachable
+// upstream costs only its own source. A source that finds the budget spent
+// fails fast and falls back to its cached copy, which is what that copy is
+// for. The happy path is about four minutes.
 const FETCH_BUDGET_MS = 11 * 60_000;
 const SOURCE_TIMEOUT_MS = 180_000;
 let fetchDeadline = Infinity;
 
 const fetchSource = async ({ url, build }) => {
-  if (build) return build(); // assembled from a JSON API rather than fetched as XMLTV
-
+  // Checked before the build() branch, not after: those producers make twenty
+  // or thirty requests of their own, and syn.is is the one host here known to
+  // be hostile. Letting them skip the budget was exactly the hole the budget
+  // exists to close.
   const left = fetchDeadline - Date.now();
   if (left <= 0) throw new Error("the run's fetch budget is spent");
+
+  if (build) return build(); // assembled from a JSON API rather than fetched as XMLTV
 
   // Generous, because one of these is a 59 MB download — but never more than
   // the budget has left, so the last source cannot overrun the job on its own.
@@ -189,6 +193,30 @@ const buildIndex = (channels) => {
     map.get(key).add(value);
   };
 
+  // A "+1" row whose id normalises to the same key as a base row's, without
+  // being the same string. My provider gives "UK: 5 Usa  1" the id "5USA.uk"
+  // and "UK: 5 Usa" the id "5 USA.uk", and idKey collapses the space away, so
+  // one source channel claimed both and the +1 row published the base
+  // channel's schedule unshifted — an hour early, every programme, with
+  // nothing to say so. Leaving the id unindexed means no source claims it and
+  // timeshift.mjs fills the row properly instead.
+  //
+  // Scoped to that collision on purpose. The seven rows whose id IS a real
+  // upstream +1 feed ("E4+1.uk", "ITV3+1.uk") key differently from their base
+  // and keep matching, and where the provider hands a +1 row its base id
+  // verbatim ("UK: Channel 5  1") nothing here can tell the two apart.
+  const shadowed = new Set();
+  const baseIds = new Map();
+  for (const ch of channels)
+    if (ch.epg_channel_id && ch.name && !PLUS_ONE.test(ch.name))
+      add(baseIds, idKey(ch.epg_channel_id), ch.epg_channel_id);
+  for (const ch of channels) {
+    if (!ch.epg_channel_id || !ch.name || !PLUS_ONE.test(ch.name)) continue;
+    const sharing = baseIds.get(idKey(ch.epg_channel_id));
+    if (sharing && [...sharing].some((id) => id !== ch.epg_channel_id))
+      shadowed.add(ch.epg_channel_id);
+  }
+
   for (const ch of channels) {
     const target = ch.epg_channel_id;
     const cc = providerCc(ch);
@@ -205,6 +233,9 @@ const buildIndex = (channels) => {
       }
       continue;
     }
+
+    // Deliberately unreachable by any source, so the timeshift pass fills it.
+    if (shadowed.has(target)) continue;
 
     targetCc.set(target, cc);
     add(byId, idKey(target), target);
@@ -273,13 +304,24 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
   // channel, "TNT Sports 3.uk" alongside "TNTSports3 HD.uk", and only one of
   // them matches exactly. Claimed targets are never revisited, so a loose
   // match still cannot steal what something else matched precisely.
+  // Which targets are the provider's own ids, as opposed to a source id that
+  // pass 4 or passthrough keeps as-is. Only the provider can re-point one of
+  // its ids at a different channel, so only these need re-checking when a
+  // cached copy is replayed days later. Marking them matters: checking all of
+  // them cost the US sports fallback 30 of its 31 channels, those being
+  // matched by name and so carrying the source's ids, not the provider's.
+  const fromProvider = new Set();
+
   const take = (sourceId, found) => {
     const targets = new Set([...(found ?? [])].filter((t) => !claimed.has(t)));
     if (!targets.size) return;
     const already = resolved.get(sourceId);
     if (already) for (const t of targets) already.add(t);
     else resolved.set(sourceId, targets);
-    for (const t of targets) claimed.add(t);
+    for (const t of targets) {
+      claimed.add(t);
+      fromProvider.add(t);
+    }
   };
 
   // Pass 1: exact ids and names. The ?? chain stops at the first lookup that
@@ -360,6 +402,7 @@ const convert = (xml, index, { passthrough, borrow } = {}) => {
     for (const target of resolved.get(sourceId) ?? [])
       channels.push({
         id: target,
+        fromProvider: fromProvider.has(target),
         element: withAliases(element, labels, target).replace(
           /\bid="[^"]*"/,
           `id="${escapeAttr(target)}"`
@@ -403,6 +446,7 @@ const counts = {};
 const slots = new Set();
 let repeats = 0;
 const stale = {}; // label -> age in days of the cached copy standing in for it
+const collapsed = {}; // label -> a run whose matching fell off a cliff
 const seen = new Set();
 
 // One merge for every producer, sources and events alike: first to claim an id
@@ -422,7 +466,7 @@ const merge = (label, { channels: produced, programmes }) => {
     // handful of Icelandic rows — and a repeat is not harmless: the grid shows
     // one of two identical entries, chosen arbitrarily. Measured at 391 of
     // 79,497 programmes in the last run before this existed.
-    const slot = [channel, attr(element, "start"), attr(element, "stop"), titleOf(element)].join("|");
+    const slot = slotKey(channel, element);
     if (slots.has(slot)) {
       repeats++;
       continue;
@@ -484,7 +528,11 @@ for (const source of SOURCES) {
   // and then blame the source for it.
   if (!(label in stale)) {
     try {
-      cache.save(label, produced);
+      const saved = cache.save(label, produced);
+      // The cache declining to overwrite means this run matched far fewer
+      // channels than the copy it holds — the silent half of a source
+      // breaking, since the gate's per-source check only fires at zero.
+      if (saved?.collapsed) collapsed[label] = saved.collapsed;
     } catch (err) {
       console.error(`${label}: fetched fine, but the cached copy could not be written (${err.message})`);
     }
@@ -524,7 +572,7 @@ const xml =
 
 const raw = Buffer.from(xml, "utf8");
 writeFileSync(OUT, gzipSync(raw, { level: 9 }));
-writeFileSync(COUNTS, `${JSON.stringify({ sources: counts, stale }, null, 2)}\n`);
+writeFileSync(COUNTS, `${JSON.stringify({ sources: counts, stale, collapsed }, null, 2)}\n`);
 
 console.log(
   `\n${OUT}: ${seen.size} channels, ${allProgrammes.length} programmes, ${mb(raw.length)} raw`

@@ -10,7 +10,7 @@
 // malformed row must cost its own programme, never the whole source.
 
 import { HOUR_MS, xmltvChannel, xmltvProgramme } from "./epg-xml.mjs";
-import { getJson, request } from "./http.mjs";
+import { getJson } from "./http.mjs";
 
 
 // What to assume when a publisher gives a start and no end.
@@ -18,19 +18,34 @@ const ASSUMED_HOURS = 3;
 // How many days ahead to walk the day-at-a-time APIs.
 const HORIZON_DAYS = 10;
 
+// These two producers make twenty or thirty requests each, one per station or
+// per day, so the defaults would let one unresponsive host spend the whole
+// job's time — 20 requests at 60 seconds and three attempts is an hour against
+// a twenty-minute job. Short per request, and a budget for the walk, the same
+// shape events.mjs uses for Viaplay. syn.is is the host that has actually
+// misbehaved here, by resetting the connection rather than answering.
+const REQUEST = { timeoutMs: 30_000, attempts: 2 };
+const BUDGET_MS = 240_000;
+
 const SYN_API = "https://www.syn.is/api/epg";
 
 export const synGuide = async () => {
-  const stations = await getJson(SYN_API);
+  const stations = await getJson(SYN_API, REQUEST);
   if (!Array.isArray(stations)) throw new Error("station list was not an array");
 
   const channels = [];
   const programmes = [];
+  const deadline = Date.now() + BUDGET_MS;
 
   for (const station of stations) {
+    // Running out of time is a failure of the whole producer, not a smaller
+    // result. Returning what was read so far would be saved as this source's
+    // output and overwrite a complete cached copy with a partial one — so the
+    // source fails instead, and the cache serves the full copy it already has.
+    if (Date.now() > deadline) throw new Error("ran out of time reading the station list");
     let events;
     try {
-      events = await getJson(`${SYN_API}/${station}`);
+      events = await getJson(`${SYN_API}/${station}`, REQUEST);
       events = events.filter((event) => event?.upphaf && (event.isltitill || event.titill));
     } catch {
       continue; // one station being down is not the whole source failing
@@ -91,15 +106,22 @@ const RUV_QUERY = `query getSchedule($channel: Channels!, $date: String!) {
 // 17:30-18:20 alongside the six cartoons that make it up. XMLTV has no notion
 // of nesting, so a player shows one arbitrary programme across the whole span.
 // The strand is the entry that completely contains the one after it.
-const withoutStrands = (events) =>
-  events.filter((event, at) => {
-    const next = events[at + 1];
-    return !next || !(next.start < event.stop && next.stop <= event.stop);
-  });
+// Only the immediately following entry is compared, so the list has to be in
+// order — the caller sorts it rather than leaving that to how the API happened
+// to answer. Exported for the tests: the arithmetic here decides whether an
+// Icelandic channel shows 93 overlapping programmes or 2.
+export const withoutStrands = (events) =>
+  [...events]
+    .sort((one, two) => one.start - two.start)
+    .filter((event, at, sorted) => {
+      const next = sorted[at + 1];
+      return !next || !(next.start < event.stop && next.stop <= event.stop);
+    });
 
 export const ruvGuide = async () => {
   const channels = [];
   const programmes = [];
+  const deadline = Date.now() + BUDGET_MS;
 
   for (const [channel, name] of Object.entries(RUV_CHANNELS)) {
     const id = `${channel}.is`;
@@ -108,10 +130,14 @@ export const ruvGuide = async () => {
     const seenStart = new Set();
 
     for (let day = 0; day < HORIZON_DAYS; day++) {
+      // As above: a short guide is worse than no guide, because it would
+      // replace the cached one.
+      if (Date.now() > deadline) throw new Error("ran out of time reading the schedule");
       const date = new Date(Date.now() + day * 24 * HOUR_MS).toISOString().slice(0, 10);
       let events;
       try {
         const answer = await getJson(RUV_GQL, {
+          ...REQUEST,
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ query: RUV_QUERY, variables: { channel, date } }),

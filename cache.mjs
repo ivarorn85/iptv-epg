@@ -89,13 +89,17 @@ export const save = (label, { channels, programmes }) => {
       `${label}: keeping the cached copy — this run matched ${channels.length} channels` +
         ` against the ${existing.channels.length} it holds`
     );
-    return null;
+    // Reported, not just logged. This is the only detector of a source whose
+    // fetch succeeds while its matching collapses, and the gate's per-source
+    // check only fires at exactly zero — so 171 channels becoming 60 would
+    // otherwise be held here and published green.
+    return { collapsed: { now: channels.length, held: existing.channels.length } };
   }
 
   mkdirSync(DIR, { recursive: true });
   const body = JSON.stringify({ fetched: new Date().toISOString(), channels, programmes });
   writeFileSync(file, gzipSync(Buffer.from(body, "utf8"), { level: 6 }));
-  return { channels: channels.length, programmes: programmes.length };
+  return { stored: { channels: channels.length, programmes: programmes.length } };
 };
 
 // Null whenever there is nothing worth serving — no copy, an unreadable one, or
@@ -126,9 +130,15 @@ export const load = (label, { stillKnown } = {}) => {
   // playlist no longer knows is harmless, but emitting one the provider has
   // since pointed at a different channel is not — it is the one thing this
   // project calls worse than an empty row.
+  //
+  // Only ids that came FROM the provider are checked. The rest are the source's
+  // own, kept by pass 4 or passthrough and matched by display-name, so the
+  // provider cannot have re-pointed them — and checking them anyway threw away
+  // 30 of US sports' 31 channels and four of Sýn's, the ones no other source
+  // carries at all.
   let channels = cached.channels;
   if (stillKnown) {
-    channels = channels.filter((channel) => stillKnown.has(channel.id));
+    channels = channels.filter((channel) => !channel.fromProvider || stillKnown.has(channel.id));
     const live = new Set(channels.map((channel) => channel.id));
     programmes = programmes.filter((programme) => live.has(programme.channel));
   }

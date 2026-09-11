@@ -53,8 +53,23 @@ describe("isPlaceholder", () => {
   });
 
   it("leaves real programmes alone, including ones that read like filler", () => {
-    // These are real titles that a substring match would have eaten.
-    for (const title of ["The Help", "Help! My House Is Haunted", "No Reservations", "Data Detectives"])
+    // Every one of these contains a filler token as a substring, which is the
+    // only thing that makes the anchors load-bearing. Measured on the last
+    // complete published guide: with both anchors gone, 1,396 titles and 4,429
+    // programmes are discarded as filler, and 418 channels lose their entire
+    // schedule — the hyphen token alone eats every Icelandic sports fixture.
+    // Titles taken from that guide rather than invented.
+    for (const title of [
+      "Bandaríkin - Ungverjaland",
+      "Kína - Frakkland",
+      "Stundin okkar-Tökum á loft III",
+      "The Help",
+      "Help! My House Is Haunted",
+      "No Reservations",
+      "Data Detectives",
+      "No Data Left Behind",
+      "TBA Chronicles",
+    ])
       assert.ok(!isPlaceholder(titled(title)), title);
   });
 
