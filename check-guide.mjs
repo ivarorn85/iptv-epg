@@ -128,6 +128,11 @@ let invalid = 0; // ends before it starts, or carries a stamp nothing can read
 let orphaned = 0; // names a channel the guide never declares
 let repeated = 0; // the same programme in the same slot twice
 const slots = new Set();
+// Starts and stops per channel, to count programmes that run into each other.
+// It is the only way to see a source that has pooled several channels onto one:
+// guide.xml on is-epg.run.place does exactly that, 423 overlaps on a single
+// channel, and a zero-length marker given an assumed length did the same here.
+const spans = new Map();
 for (const [element] of xml.matchAll(PROGRAMME)) {
   programmes++;
   const channel = attr(element, "channel");
@@ -141,6 +146,14 @@ for (const [element] of xml.matchAll(PROGRAMME)) {
   const slot = slotKey(channel, element);
   if (slots.has(slot)) repeated++;
   else slots.add(slot);
+  if (!spans.has(channel)) spans.set(channel, []);
+  spans.get(channel).push([start, stop]);
+}
+
+let overlapping = 0;
+for (const list of spans.values()) {
+  list.sort((one, two) => one[0] - two[0]);
+  for (let at = 0; at < list.length - 1; at++) if (list[at + 1][0] < list[at][1]) overlapping++;
 }
 const hoursAhead = (latest - Date.now()) / HOUR_MS;
 
@@ -190,6 +203,7 @@ const ambiguous = handoff.ambiguous ?? [];
 // Rows the builder found could resolve to the wrong channel — counted there
 // because it needs the playlist, which the gate never sees. Recorded in
 // status.json, which is committed, so growth shows up as a diff.
+console.log(`programmes running into the next: ${overlapping}`);
 console.log(
   `rows a name could misdirect: ${ambiguous.length}` +
     (ambiguous.length ? ` — ${ambiguous.slice(0, 4).join(", ")}${ambiguous.length > 4 ? ", ..." : ""}` : "")
@@ -254,6 +268,7 @@ writeFileSync(
       sources: counts,
       stale,
       ambiguous,
+      overlapping,
       regressions,
       zeroed,
       collapsed,

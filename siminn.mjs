@@ -21,7 +21,7 @@
 // than scraped field by field: it either parses or it throws, and a throw costs
 // this source its channels and nothing else.
 
-import { HOUR_MS, xmltvChannel, xmltvProgramme } from "./epg-xml.mjs";
+import { xmltvChannel, xmltvProgramme } from "./epg-xml.mjs";
 import { request } from "./http.mjs";
 import { nameKey } from "./keys.mjs";
 
@@ -111,11 +111,17 @@ export const scheduleFrom = (html) => {
     if (!id || !event.title || !event.since || !event.till) continue;
 
     const start = at(event.since);
-    let stop = at(event.till);
+    const stop = at(event.till);
     if (Number.isNaN(start.getTime()) || Number.isNaN(stop.getTime())) continue;
-    // A programme running past midnight is given the next day's date by the
-    // page itself, so this only guards against a stamp pair that disagrees.
-    if (stop <= start) stop = new Date(start.getTime() + HOUR_MS);
+
+    // A zero-length entry is a marker, not a programme — Omega publishes 145 of
+    // them in a week, continuity announcements like "Omega kynnir" that start
+    // and end at the same minute. Giving each an assumed length instead of
+    // dropping it put 76 hour-long programmes on top of Omega's real schedule,
+    // which is where this build's only overlapping programmes came from.
+    // ruv.is does the same thing with "Dagskrárlok" and iceland.mjs drops those
+    // for the same reason.
+    if (stop <= start) continue;
 
     const slot = `${id}|${event.since}`;
     if (seen.has(slot)) continue;

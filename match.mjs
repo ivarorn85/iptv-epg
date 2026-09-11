@@ -175,7 +175,7 @@ const firstHit = (labels, lookup) => {
 // ids carry none — epg.pw numbers its channels "9121". Without it ccOf() finds
 // nothing, so pass 3 is skipped for every channel in the file and the whole
 // source matches nothing at all: 756 UK channels, none of them reachable.
-export const convert = (xml, index, { passthrough, borrow, cc: declared } = {}) => {
+export const convert = (xml, index, { passthrough, borrow, cc: declared, advertised } = {}) => {
   const { byId, byName, byBase, byScoped, byScopedBase, aliases, targetCc, inherited } = index;
   const withData = channelsWithData(xml);
 
@@ -256,6 +256,12 @@ export const convert = (xml, index, { passthrough, borrow, cc: declared } = {}) 
   // its third step compares the channel name against <display-name> — so the
   // guide carries my provider's own names for them. Country-scoped like pass 3,
   // or the Vietnamese Animal Planet would collect a Nordic schedule.
+  // A name an earlier source already advertises is not offered again. One
+  // provider name has to mean one channel: two channels carrying it leaves a
+  // player choosing between them, and both are the same channel from different
+  // upstreams with different schedules, so the choice is silent and arbitrary.
+  // Adding epg.pw took this from 2 rows to 27 before the check existed, all of
+  // them leftovers it claimed on a name an earlier source was already serving.
   const aliasNames = (labels, cc) => {
     const names = new Set();
     if (!cc) return names;
@@ -264,7 +270,7 @@ export const convert = (xml, index, { passthrough, borrow, cc: declared } = {}) 
         ...(aliases.get(scopedKey(cc, label)) ?? []),
         ...(aliases.get(scopedBaseKey(cc, label)) ?? []),
       ])
-        names.add(name);
+        if (!advertised?.has(name)) names.add(name);
     return names;
   };
 

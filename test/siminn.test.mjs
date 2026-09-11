@@ -136,16 +136,37 @@ describe("scheduleFrom", () => {
     assert.ok(xml.includes("Kept"));
   });
 
-  it("gives an hour to a pair of stamps that disagree", () => {
+  it("drops a zero-length marker rather than inventing a length for it", () => {
+    // Omega publishes 145 of these in a week — continuity announcements like
+    // "Omega kynnir" that start and end at the same minute. Giving each an
+    // assumed length laid 76 hour-long programmes over Omega's real schedule,
+    // and was this build's only source of overlapping programmes.
     const xml = scheduleFrom(
       page({
         channels: [station(1001, "Omega")],
-        epg: [event(1001, "2026-09-11T20:00", "2026-09-11T19:00", "Backwards")],
+        epg: [
+          event(1001, "2026-09-11T20:00", "2026-09-11T20:00", "Omega kynnir"),
+          event(1001, "2026-09-11T20:00", "2026-09-11T20:29", "CBN fréttir"),
+        ],
       })
     );
-    const programme = xml.match(/<programme[^>]*>/)[0];
-    assert.equal(attr(programme, "start"), "20260911200000 +0000");
-    assert.equal(attr(programme, "stop"), "20260911210000 +0000");
+    assert.ok(!xml.includes("Omega kynnir"), "the marker must not become a programme");
+    assert.ok(xml.includes("CBN fréttir"));
+    assert.equal([...xml.matchAll(/<programme /g)].length, 1);
+  });
+
+  it("drops a pair of stamps that disagree, rather than guessing", () => {
+    const xml = scheduleFrom(
+      page({
+        channels: [station(1001, "Omega")],
+        epg: [
+          event(1001, "2026-09-11T20:00", "2026-09-11T19:00", "Backwards"),
+          event(1001, "2026-09-11T21:00", "2026-09-11T22:00", "Fine"),
+        ],
+      })
+    );
+    assert.ok(!xml.includes("Backwards"));
+    assert.ok(xml.includes("Fine"));
   });
 
   it("reads the times as UTC whatever timezone the build runs in", () => {

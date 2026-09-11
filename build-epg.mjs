@@ -165,6 +165,9 @@ const counts = {};
 // reach the guide. Global rather than per source: only one source ever emits a
 // given channel, but this way a producer cannot repeat itself either.
 const slots = new Set();
+// Every display-name the guide already carries, so one provider name is never
+// offered on two channels.
+const advertised = new Set();
 let repeats = 0;
 const stale = {}; // label -> age in days of the cached copy standing in for it
 const collapsed = {}; // label -> a run whose matching fell off a cliff
@@ -179,6 +182,9 @@ const merge = (label, { channels: produced, programmes }) => {
     seen.add(id);
     emitted.add(id);
     allChannels.push(element);
+    // What this channel now answers to, so a later source does not offer the
+    // same provider name on a second channel — see aliasNames in match.mjs.
+    for (const [, name] of element.matchAll(DISPLAY_NAME)) advertised.add(name.trim());
   }
   for (const { channel, element } of programmes) {
     if (!emitted.has(channel)) continue;
@@ -221,7 +227,7 @@ for (const source of SOURCES) {
   let produced = null;
 
   try {
-    produced = convert(await fetchSource(source), index, source);
+    produced = convert(await fetchSource(source), index, { ...source, advertised });
   } catch (err) {
     // load() is documented never to throw, and is wrapped anyway: a fallback
     // that fails must cost this source its channels, never the whole build.
