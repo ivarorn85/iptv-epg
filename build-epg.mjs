@@ -31,6 +31,7 @@ import {
 import { EVENT_NAME, eventGuide } from "./events.mjs";
 import { getJson, request } from "./http.mjs";
 import { ruvGuide, synGuide } from "./iceland.mjs";
+import { siminnGuide } from "./siminn.mjs";
 import { baseKey, bodyOf, ccOf, idKey, nameKey, providerCc, scopedBaseKey, scopedKey } from "./keys.mjs";
 import { PLUS_ONE, timeshiftGuide } from "./timeshift.mjs";
 
@@ -47,6 +48,13 @@ const SOURCES = [
   // for Sýn+, the Sýn Sport Ísland channels and Sýn Sport 5.
   { label: "RÚV", build: ruvGuide },
   { label: "Sýn", build: synGuide },
+  // The Icelandic schedule for the international channels, which is the right
+  // one for Icelandic rows: before this, four of them were served Sweden's
+  // because no Icelandic source carried them, and Omega and ARTE ÞÝSK had
+  // nothing at all. Ahead of the aggregators below on purpose — and it is the
+  // only Icelandic source here that is not iptv-epg.org, which took 135
+  // channels' guide down with it for a day and a half.
+  { label: "Síminn", build: siminnGuide },
   // Ids already in my provider's vocabulary ("AnimalPlanet.is"), and it runs
   // first because it carries a full week of RUV and RUV 2 where guide3 has one
   // day. It has nothing for Sýn, Sýn Sport, Sjónvarp Símans or KVF, so guide3

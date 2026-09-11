@@ -29,6 +29,7 @@ TiviMate succeeds on step one and never has to guess.
    ```
    build-epg.mjs        source list, matching passes, merge, main
    iceland.mjs          the two Icelandic broadcasters' JSON APIs
+   siminn.mjs           Sjónvarp Símans' seven-day guide, read off its page
    events.mjs           per-event channels read out of their own names
    timeshift.mjs        "+1" channels, derived from their base channel
    cache.mjs            each source's last good output, for when one fails
@@ -250,6 +251,7 @@ provider sometimes has two ids for one channel — `TNT Sports 3.uk` alongside
 | ------------------------------- | ----------------------------- | -------------------------------------------------------------------------------- |
 | **ruv.is** GraphQL              | RÚV, RÚV 2                    | First party. Real end times, not inferred ones                                   |
 | **syn.is** JSON API             | 13 Sýn channels               | First party. The only source anywhere for Sýn+, Sýn Sport 5 and Sýn Sport Ísland |
+| **siminn.is** dagskrá page       | 52 channels, 7 days           | The Icelandic schedule for the foreign feeds, and the only source for Omega and ARTE ÞÝSK |
 | iptv-epg.org `epg-is`           | Iceland, 70 channels          | Ids already in my provider's form, `AnimalPlanet.is`                             |
 | is-epg.run.place `guide3.xml`   | Iceland, 14 channels          | Ids already in `IS: RUV FHD` form                                                |
 | epgshare01 per country          | UK, US, US sports, DK, NO, SE | Ready-made, updated daily                                                        |
@@ -259,6 +261,20 @@ The first source to claim a channel wins, so the order is the design. The table
 above groups the six epgshare files into one row for brevity; in `SOURCES` they
 are interleaved, each gap-filler sitting directly after the epgshare file for its
 country. `SOURCES` is the authority on order.
+
+**Sjónvarp Símans is read after those two and before the aggregators**, because
+for an Icelandic row the Icelandic schedule is the right one. It supplies 21
+channels, including four that were being served Denmark's or Sweden's schedule
+because no Icelandic source carried them, and `IS: Omega FHD` and
+`IS: ARTE ÞÝSK FHD`, which had no guide at all. It is also the only Icelandic
+source here that is not iptv-epg.org — which went down for a day and a half and
+took 135 channels' guide with it.
+
+It is the most fragile source in the build and deliberately so: there is no API,
+the schedule is a Next.js payload embedded in the page, and the page answers
+**HTTP 500** while serving it. `siminn.mjs` therefore parses the payload as real
+JSON rather than scraping field by field — it either parses or it throws, and a
+throw costs that source its channels and nothing else.
 
 **The broadcasters' own APIs go first.** `syn.is/api/epg` lists its stations and
 serves each one's schedule as JSON; `ruv.is/gql` answers a GraphQL query per
@@ -308,6 +324,7 @@ changed its ids or its naming.
 | ------------- | -------- | --------------------------------------------- |
 | RÚV           | 2        | RÚV and RÚV 2, from ruv.is                    |
 | Sýn           | 13       | the whole Sýn family, from syn.is             |
+| Síminn        | 21       | the Icelandic schedule for the foreign feeds  |
 | Iceland extra | 19       | the Icelandic international channels          |
 | Iceland       | 4        | Sjónvarp Símans, Samstöðin, KVF               |
 | UK            | 171      |                                               |
@@ -574,6 +591,8 @@ Checked against the real playlist, so none of this needs re-testing.
 | `IE1`                                 | 2 rows. Ireland, not Iceland.                                                                                                                                                                                                                                                                                                                                                 |
 | iptv-org/epg                          | 251 site scrapers, and they emit _iptv-org_ ids rather than my provider's, which is the whole job here. Its `ruv.is` grabber uses the same GraphQL endpoint as this build and its `syn.is` grabber the same API; its `sjonvarp.is` page is client-rendered and its channel map still lists Stöð 2, retired in 2025.                                                           |
 | iptv-org/api (channel database)       | Measured: resolves **0** of the rows we miss. Its `alt_names` are good, but the bottleneck is source coverage rather than naming, and its canonical ids (`SVT1.se`) are a third vocabulary — adopting them would break matching against my provider's `tvg-id`. The `closed` field is useful for diagnosing dead channels, which is a one-off question, not a daily download. |
+| globetvapp/epg                        | 454 country files, and abandoned: the last commit is 2025-12-31. Measured — every file's newest programme ended **252 days ago**, with zero still in the future, so the gate would refuse it and every source count would be zero. Its `Iceland/iceland2.xml` carries exactly 55 channels, which is a scrape of Síminn, so the repo is useful only as a pointer to the source below it.                                    |
+| epgshare's other files                | Measured against the 135 channels iptv-epg.org's outage cost us: `IE1` fills 2, and `BEIN1`, `US_LOCALS1`, `RALLY_TV1` and `FANDUEL1` fill **none** despite looking like exact matches by name. `IE1` was tried and removed — it serves mostly Irish rows, and one UK channel is not worth 163 channels of another country. `ALL_SOURCES1` cannot be parsed at all: it exceeds the largest string Node can hold. |
 | viaplay.is content API                | Not usable as a source — start and end times but **no channel field at all**, so there is nothing to key XMLTV on. Its end times _are_ borrowed for the event pass, below.                                                                                                                                                                                                    |
 | framundanibeinni.is                   | Names a channel per fixture, but 228 of its 369 entries are `viaplay` or `livey`, which identify the _service_ rather than which V Sport Live or `[Livey]` channel carries it. The rest is `syn*`/`ruv*`/`eurosport*`, already covered better — syn.is gives `synsportisland` 324 entries where this gives 4.                                                                 |
 
