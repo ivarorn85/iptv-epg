@@ -1,9 +1,9 @@
 {
-  "built": "2026-09-11T13:48:09.933Z",
+  "built": "2026-09-11T13:55:39.762Z",
   "channels": 1823,
   "programmes": 102576,
   "scheduleRunsTo": "2026-10-31T17:00:00.000Z",
-  "gzipBytes": 16872844,
+  "gzipBytes": 16872859,
   "sources": {
     "RÚV": 2,
     "Sýn": 13,
@@ -43,7 +43,7 @@
     "UK: Sky Sport Racing (SkyGo)",
     "IE:  RTE 2 FHD"
   ],
-  "overlapping": 57,
+  "overlapping": 56,
   "regressions": [],
   "zeroed": [],
   "collapsed": {}
