@@ -22,9 +22,25 @@ export const escapeAttr = (s) =>
 
 export const mb = (bytes, digits = 1) => `${(bytes / 1048576).toFixed(digits)} MB`;
 
+// Cache ages, in hours: a copy standing in for a failed source is usually less
+// than a day old, and "0.4 days" tells a reader less than "10h" does.
+export const hours = (days) => `${Math.round(days * 24)}h`;
+
 // Iceland is UTC+0 all year, and every source here publishes in it, so the
 // offset is a constant rather than something to carry around.
 const xmltvTime = (date) => `${date.toISOString().replace(/\D/g, "").slice(0, 14)} +0000`;
+
+// The other direction: an XMLTV stamp back to a millisecond count, NaN if it is
+// not one. Shared so the builder and the gate agree on what a stamp means.
+// "20260909095000 +0000", where the offset is optional and defaults to UTC.
+export const parseTime = (stamp) => {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*([+-]\d{4})?$/.exec(stamp.trim());
+  if (!m) return NaN;
+  const [, year, month, day, hour, minute, second, zone = "+0000"] = m;
+  return Date.parse(
+    `${year}-${month}-${day}T${hour}:${minute}:${second}${zone.slice(0, 3)}:${zone.slice(3)}`
+  );
+};
 
 // Emitters for the sources that publish JSON rather than XMLTV. Element order
 // follows the DTD — title, desc, then category — because some readers care.

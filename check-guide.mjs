@@ -9,7 +9,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 
-import { PROGRAMME, attr, mb } from "./epg-xml.mjs";
+import { PROGRAMME, attr, hours, mb, parseTime } from "./epg-xml.mjs";
 
 const HOUR_MS = 3_600_000;
 
@@ -31,14 +31,6 @@ const COUNTS = "counts.json";
 
 const readJson = (file) => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null);
 
-// "20260909095000 +0000"
-const toMs = (stamp) => {
-  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*([+-]\d{4})?$/.exec(stamp.trim());
-  if (!m) return NaN;
-  const [, y, mo, d, h, min, s, tz = "+0000"] = m;
-  return Date.parse(`${y}-${mo}-${d}T${h}:${min}:${s}${tz.slice(0, 3)}:${tz.slice(3)}`);
-};
-
 const bytes = readFileSync(GUIDE);
 const xml = gunzipSync(bytes).toString("utf8");
 
@@ -49,7 +41,7 @@ let programmes = 0;
 let latest = -Infinity;
 for (const [element] of xml.matchAll(PROGRAMME)) {
   programmes++;
-  const stop = toMs(attr(element, "stop") ?? "");
+  const stop = parseTime(attr(element, "stop") ?? "");
   if (stop > latest) latest = stop;
 }
 const hoursAhead = (latest - Date.now()) / HOUR_MS;
@@ -77,7 +69,9 @@ else if (hoursAhead < MIN_HOURS_AHEAD)
 // The floors above are totals, so they cannot see one source dying while the
 // rest hold the numbers up. Comparing per source against the last published
 // run can, and it needs no thresholds to maintain.
-const counts = readJson(COUNTS) ?? {};
+const handoff = readJson(COUNTS) ?? {};
+const counts = handoff.sources ?? {};
+const stale = handoff.stale ?? {};
 const previous = readJson(STATUS)?.sources ?? {};
 for (const [label, before] of Object.entries(previous)) {
   // A label the build no longer reports at all was removed from SOURCES on
@@ -88,6 +82,12 @@ for (const [label, before] of Object.entries(previous)) {
   if (before >= HEALTHY_SOURCE && now === 0)
     failures.push(`source "${label}" matched ${before} channels last run and 0 now — its upstream changed`);
 }
+// A cached source is a source that failed, and its count above came from the
+// last copy that worked. Worth saying on every run: the guide is fine, the
+// upstream is not, and when the copy ages out the check above starts failing.
+for (const [label, ageDays] of Object.entries(stale))
+  console.log(`note: "${label}" was served from a cached copy ${hours(ageDays)} old`);
+
 if (Object.keys(previous).length)
   console.log(
     `per source vs last run: ${Object.entries(counts)
@@ -117,6 +117,7 @@ writeFileSync(
       scheduleRunsTo: new Date(latest).toISOString(),
       gzipBytes: bytes.length,
       sources: counts,
+      stale,
     },
     null,
     2

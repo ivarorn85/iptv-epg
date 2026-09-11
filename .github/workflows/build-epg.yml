@@ -40,6 +40,18 @@ jobs:
       - name: Test
         run: node --test
 
+      # Each source's last good output, so one upstream failing costs its
+      # channels nothing — cache.mjs explains the bounds. Cache keys are
+      # write-once, hence the run-id key with a prefix restore: every run
+      # reads the newest entry and writes a fresh one. Losing it entirely is
+      # only a lost safety net, so nothing here is load-bearing.
+      - name: Restore the source cache
+        uses: actions/cache/restore@v4
+        with:
+          path: cache
+          key: epg-cache-${{ github.run_id }}
+          restore-keys: epg-cache-
+
       - name: Build guide
         env:
           XTREAM_HOST: ${{ secrets.XTREAM_HOST }}
@@ -48,6 +60,16 @@ jobs:
           # epg-us is 500 MB uncompressed; don't leave the heap to chance.
           NODE_OPTIONS: --max-old-space-size=6144
         run: node build-epg.mjs
+
+      # Immediately after the build and regardless of what follows: a run whose
+      # guide the gate then refuses still fetched sources that worked, and
+      # tomorrow's run should have them.
+      - name: Save the source cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: cache
+          key: epg-cache-${{ github.run_id }}
 
       # Refuses a guide that would empty the grid. The job stops here, the last
       # good release stays up, and the failure mail is the signal to look.

@@ -196,13 +196,13 @@ being the event pass's job.
 
 A "+1" channel is its base channel an hour later, so where the base has a
 schedule the +1 schedule does not need fetching. My provider writes it as a
-trailing "1" after a *double* space — `UK: FILM 4  1` — which is what separates
+trailing "1" after a _double_ space — `UK: FILM 4  1` — which is what separates
 it from a channel number: `UK: Coral TV 2` has one space and is a different
 channel. The base channel's programmes are copied with both timestamps moved an
 hour, keeping their original offset. That reaches `Film 4 +1`, `GOLD +1`,
 `TLC +1`, `More 4 +1`, `Alibi +1` and `5 Star +1`.
 
-Copying a sibling's schedule *unshifted* to every other empty row was tried and
+Copying a sibling's schedule _unshifted_ to every other empty row was tried and
 rejected. It filled 328 channels but added 37,000 duplicate programmes and took
 the guide from 62 MB to 99 MB, nearly all of it second rows for channels that
 already had a schedule under another id.
@@ -237,14 +237,14 @@ provider sometimes has two ids for one channel — `TNT Sports 3.uk` alongside
 
 ## Sources
 
-| Source                          | Coverage                      | Why it is in the list                                |
-| ------------------------------- | ----------------------------- | ---------------------------------------------------- |
-| **ruv.is** GraphQL | RÚV, RÚV 2 | First party. Real end times, not inferred ones |
-| **syn.is** JSON API | 13 Sýn channels | First party. The only source anywhere for Sýn+, Sýn Sport 5 and Sýn Sport Ísland |
-| iptv-epg.org `epg-is`           | Iceland, 70 channels          | Ids already in my provider's form, `AnimalPlanet.is` |
-| is-epg.run.place `guide3.xml`   | Iceland, 14 channels          | Ids already in `IS: RUV FHD` form                    |
-| epgshare01 per country          | UK, US, US sports, DK, NO, SE | Ready-made, updated daily                            |
-| iptv-epg.org `epg-gb`, `epg-us` | UK and US gap-fillers         | Cover channels epgshare has no entry for at all      |
+| Source                          | Coverage                      | Why it is in the list                                                            |
+| ------------------------------- | ----------------------------- | -------------------------------------------------------------------------------- |
+| **ruv.is** GraphQL              | RÚV, RÚV 2                    | First party. Real end times, not inferred ones                                   |
+| **syn.is** JSON API             | 13 Sýn channels               | First party. The only source anywhere for Sýn+, Sýn Sport 5 and Sýn Sport Ísland |
+| iptv-epg.org `epg-is`           | Iceland, 70 channels          | Ids already in my provider's form, `AnimalPlanet.is`                             |
+| is-epg.run.place `guide3.xml`   | Iceland, 14 channels          | Ids already in `IS: RUV FHD` form                                                |
+| epgshare01 per country          | UK, US, US sports, DK, NO, SE | Ready-made, updated daily                                                        |
+| iptv-epg.org `epg-gb`, `epg-us` | UK and US gap-fillers         | Cover channels epgshare has no entry for at all                                  |
 
 The first source to claim a channel wins, so the order is the design. The table
 above groups the six epgshare files into one row for brevity; in `SOURCES` they
@@ -257,12 +257,12 @@ channel per day. Both are first party, so they beat any aggregator for the
 channels they own — and between them they carry things no third party has at
 all. Against what the aggregators were giving:
 
-| Channel | Aggregators | Broadcaster API |
-| --- | --- | --- |
-| `RUV.is` | 220 / 7d | **291 / 11d** |
-| `Synsport.is` | 143 / 8d | **212 / 12d** |
-| `Synsportisland.is` | nothing | **324 / 12d** |
-| `Sýn+`, `Sýn Sport 5` | nothing | 110, 4 |
+| Channel               | Aggregators | Broadcaster API |
+| --------------------- | ----------- | --------------- |
+| `RUV.is`              | 220 / 7d    | **291 / 11d**   |
+| `Synsport.is`         | 143 / 8d    | **212 / 12d**   |
+| `Synsportisland.is`   | nothing     | **324 / 12d**   |
+| `Sýn+`, `Sýn Sport 5` | nothing     | 110, 4          |
 
 The RÚV query is written out in full rather than sent as the persisted-query
 hash their website uses, because that hash belongs to whichever build of the
@@ -287,7 +287,7 @@ Worth knowing before editing the list:
   `US_LOCALS1`, which is why `SOURCES` looks like it skipped one.
 - To add a country, add a line to `SOURCES`. Verified epgshare filenames include
   `DE1` `ES1` `IT1` `FR1` `NL1` `PL1` `PT1`. Germany, Spain and Italy are
-  already there, commented out deliberately — see *Measured and rejected*, they
+  already there, commented out deliberately — see _Measured and rejected_, they
   are a trap rather than a to-do list.
 
 ## What a good run looks like
@@ -295,21 +295,21 @@ Worth knowing before editing the list:
 Baseline from a verified run. A source dropping sharply means its upstream
 changed its ids or its naming.
 
-| Source        | Channels | Note                                             |
-| ------------- | -------- | ------------------------------------------------ |
-| RÚV | 2 | RÚV and RÚV 2, from ruv.is |
-| Sýn | 13 | the whole Sýn family, from syn.is |
-| Iceland extra | 19 | the Icelandic international channels |
-| Iceland | 4 | Sjónvarp Símans, Samstöðin, KVF |
-| UK            | 171      |                                                  |
-| UK extra      | 65       | Sky Sports F1, Sky Cinema, Sky Atlantic, E4      |
-| US            | 142      |                                                  |
-| US sports     | 30       | NHL team feeds, all matched by name              |
-| US extra      | 64       | A&E, CBS, HGTV, Food Network, beIN Sports 4-8    |
-| Denmark       | 59       |                                                  |
-| Norway        | 4        | see the note below                               |
-| Sweden        | 81       |                                                  |
-| Events        | ~850     | read out of channel names, not fetched           |
+| Source        | Channels | Note                                          |
+| ------------- | -------- | --------------------------------------------- |
+| RÚV           | 2        | RÚV and RÚV 2, from ruv.is                    |
+| Sýn           | 13       | the whole Sýn family, from syn.is             |
+| Iceland extra | 19       | the Icelandic international channels          |
+| Iceland       | 4        | Sjónvarp Símans, Samstöðin, KVF               |
+| UK            | 171      |                                               |
+| UK extra      | 65       | Sky Sports F1, Sky Cinema, Sky Atlantic, E4   |
+| US            | 142      |                                               |
+| US sports     | 30       | NHL team feeds, all matched by name           |
+| US extra      | 64       | A&E, CBS, HGTV, Food Network, beIN Sports 4-8 |
+| Denmark       | 59       |                                               |
+| Norway        | 4        | see the note below                            |
+| Sweden        | 81       |                                               |
+| Events        | ~850     | read out of channel names, not fetched        |
 
 About 1,500 channels and 78,000 programmes: 7.6 MB gzipped, 62 MB raw, which is
 comfortably under the size that chokes TiviMate. `Events` moves between runs by
@@ -317,7 +317,7 @@ design — it is read from the playlist's current fixtures, and finished ones ar
 dropped, so a swing of a hundred either way is normal and not a regression.
 
 Norway stays low because epgshare's Norwegian entries carry the country in the
-*name* — `Animal Planet Norway (NO,NO)` — and while the annotation in brackets
+_name_ — `Animal Planet Norway (NO,NO)` — and while the annotation in brackets
 is stripped, the trailing word is not, so it never meets my provider's
 `NO: Animal Planet`. Denmark avoids this only because its provider names match
 cleanly on their own.
@@ -368,6 +368,39 @@ no threshold to maintain: `status.json` is the baseline and it updates itself.
 When a refusal happens the last good release stays up, so the grid keeps working
 while you look into it.
 
+### One bad fetch should not empty a channel
+
+Upstreams fail briefly. All three iptv-epg.org files answered HTTP 526 — a
+Cloudflare origin-certificate error, nothing to do with this build — for a whole
+day, and with no cache that costs 149 channels their guide: `UK extra` went 66
+to 0 and `US extra` 64 to 0, the gate refused the guide, and nothing was
+refreshed at all.
+
+It is a silly way to lose a schedule, because a guide is published days ahead:
+the copy fetched that morning still covered the following week. So each source's
+finished output is kept in `cache/`, and a source that fails is served from its
+last good copy instead of contributing nothing. Requests retry first — a 5xx or
+a 429 is asked again, a 4xx never is, since it would only say the same thing —
+and the cache is what is left when retrying does not help.
+
+What is stored is the source's output after matching, not the file it came from:
+a fraction of the size, no re-parsing, and it replays through the same merge, so
+a cached source keeps its place in the first-to-claim order and can never
+outrank a source that is working. Programmes that have already been broadcast
+are dropped on the way back in, along with any channel left with nothing —
+a channel kept for its own sake would count as matched and hide the failure.
+
+Two bounds keep this honest. A copy older than four days is refused, so an
+upstream that is gone for good eventually fails the build rather than being
+papered over forever — the fallback buys four days of grace, not silence. And a
+cached source is still reported as a failure, in the build log and in
+`status.json`, so the run says plainly that the guide is fine and the upstream
+is not.
+
+In CI the directory is carried between runs by the Actions cache, not committed.
+It is worth about 5 MB. Losing it costs nothing but the safety net: the next
+successful run fills it again.
+
 One failure mode worth knowing, because it looks like something else: syn.is
 refuses Node's default User-Agent — the literal string `node` — by resetting
 the connection, which is indistinguishable from the site being down. Every
@@ -397,16 +430,17 @@ Some gaps are genuinely the source's, and some channels are simply gone:
   not in that database at all, being my provider's own invented ids.
 - **`Sky Sport 1 UHD 4K`** works only because my provider mapped it to
   `SkySp F1 HD.uk` itself.
-- **Rotating 4K event feeds** have no fixed schedule at all; pointing them at
-  the HD channel would show programmes that are not on.
+- **`UHD 4K` rows are rotating event feeds** with no fixed schedule at all;
+  pointing them at the HD channel would show programmes that are not on. The two
+  `HDR 4K` rows are the opposite case and are filled — see
+  [the one manual list](#the-one-manual-list).
 - **Skjár 1** publishes no schedule. Its dagskrá page is a policy statement —
   films with Icelandic subtitles at 5, 7, 9 and 11 daily — with no titles
   anywhere. Synthesising "Kvikmynd" blocks would be the same filler this build
   strips out of iptv-epg.org.
-- UK1 also carries no Sky Sports F1, and only regional
-  `BBC.One.Yorks.HD.uk`-style variants rather than a plain BBC One. Others cannot exist — `Sky Sport 1 UHD 4K` and `BBC One HDR 4K`
-are rotating 4K event feeds with no fixed schedule, and pointing them at the HD
-channel would show programmes that are not on.
+- **UK1 carries no Sky Sports F1**, and only regional
+  `BBC.One.Yorks.HD.uk`-style variants rather than a plain BBC One. `UK extra`
+  is what fills both.
 
 To try matching changes without waiting for CI:
 
@@ -432,7 +466,7 @@ publishing quietly. No dependencies — `node:test` is built in.
 
 They cover the pure logic only: the keys, the XMLTV emitters, and the event-name
 parsing. That is deliberate. Those are the places where a mistake produces a
-*wrong schedule on a real channel* instead of an error, and every case in there
+_wrong schedule on a real channel_ instead of an error, and every case in there
 is one that actually went wrong at some point or that a plausible tidy-up would
 break:
 
@@ -448,7 +482,7 @@ break:
 - "The Help" and "Help! My House Is Haunted" not counting as filler, which a
   substring match would have eaten
 
-One test asserts a *limitation* rather than a feature: epgshare's Norwegian
+One test asserts a _limitation_ rather than a feature: epgshare's Norwegian
 names carry the country as a word, which no normalisation strips, so they never
 meet my provider's. It is recorded because it looks like a matching bug.
 
@@ -459,18 +493,18 @@ per-source counts in the log and the gate that reads the finished file.
 
 Checked against the real playlist, so none of this needs re-testing.
 
-| Source                                | Result                                                                                                                                                                                     |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `epg_ripper_US_LOCALS1`               | 53 MB download, **536 MB raw** — past Node's 512 MB string limit, so it cannot be parsed at all. Matches 0 uncovered US ids anyway: its ids are bare call signs like `KIVI-DT.us_locals1`. |
-| `epg_ripper_ALL_SOURCES1`             | 199 MB. Chokes TiviMate.                                                                                                                                                                   |
-| `PEACOCK1` `PLEX1` `DISTROTV1`        | 0 matches each.                                                                                                                                                                            |
-| `BEIN1` `DIRECTVSPORTS1` `ALJAZEERA1` | 0 matches each.                                                                                                                                                                            |
-| `RAKUTEN1`                            | 10 rows for a 9.2 MB download.                                                                                                                                                             |
-| `IE1`                                 | 2 rows. Ireland, not Iceland.                                                                                                                                                              |
-| iptv-org/epg | 251 site scrapers, and they emit *iptv-org* ids rather than my provider's, which is the whole job here. Its `ruv.is` grabber uses the same GraphQL endpoint as this build and its `syn.is` grabber the same API; its `sjonvarp.is` page is client-rendered and its channel map still lists Stöð 2, retired in 2025. |
-| iptv-org/api (channel database) | Measured: resolves **0** of the rows we miss. Its `alt_names` are good, but the bottleneck is source coverage rather than naming, and its canonical ids (`SVT1.se`) are a third vocabulary — adopting them would break matching against my provider's `tvg-id`. The `closed` field is useful for diagnosing dead channels, which is a one-off question, not a daily download. |
-| viaplay.is content API | Not usable as a source — start and end times but **no channel field at all**, so there is nothing to key XMLTV on. Its end times *are* borrowed for the event pass, below. |
-| framundanibeinni.is | Names a channel per fixture, but 228 of its 369 entries are `viaplay` or `livey`, which identify the *service* rather than which V Sport Live or `[Livey]` channel carries it. The rest is `syn*`/`ruv*`/`eurosport*`, already covered better — syn.is gives `synsportisland` 324 entries where this gives 4. |
+| Source                                | Result                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `epg_ripper_US_LOCALS1`               | 53 MB download, **536 MB raw** — past Node's 512 MB string limit, so it cannot be parsed at all. Matches 0 uncovered US ids anyway: its ids are bare call signs like `KIVI-DT.us_locals1`.                                                                                                                                                                                    |
+| `epg_ripper_ALL_SOURCES1`             | 199 MB. Chokes TiviMate.                                                                                                                                                                                                                                                                                                                                                      |
+| `PEACOCK1` `PLEX1` `DISTROTV1`        | 0 matches each.                                                                                                                                                                                                                                                                                                                                                               |
+| `BEIN1` `DIRECTVSPORTS1` `ALJAZEERA1` | 0 matches each.                                                                                                                                                                                                                                                                                                                                                               |
+| `RAKUTEN1`                            | 10 rows for a 9.2 MB download.                                                                                                                                                                                                                                                                                                                                                |
+| `IE1`                                 | 2 rows. Ireland, not Iceland.                                                                                                                                                                                                                                                                                                                                                 |
+| iptv-org/epg                          | 251 site scrapers, and they emit _iptv-org_ ids rather than my provider's, which is the whole job here. Its `ruv.is` grabber uses the same GraphQL endpoint as this build and its `syn.is` grabber the same API; its `sjonvarp.is` page is client-rendered and its channel map still lists Stöð 2, retired in 2025.                                                           |
+| iptv-org/api (channel database)       | Measured: resolves **0** of the rows we miss. Its `alt_names` are good, but the bottleneck is source coverage rather than naming, and its canonical ids (`SVT1.se`) are a third vocabulary — adopting them would break matching against my provider's `tvg-id`. The `closed` field is useful for diagnosing dead channels, which is a one-off question, not a daily download. |
+| viaplay.is content API                | Not usable as a source — start and end times but **no channel field at all**, so there is nothing to key XMLTV on. Its end times _are_ borrowed for the event pass, below.                                                                                                                                                                                                    |
+| framundanibeinni.is                   | Names a channel per fixture, but 228 of its 369 entries are `viaplay` or `livey`, which identify the _service_ rather than which V Sport Live or `[Livey]` channel carries it. The rest is `syn*`/`ruv*`/`eurosport*`, already covered better — syn.is gives `synsportisland` 324 entries where this gives 4.                                                                 |
 
 Adding the 20 other European country files would gain roughly 2,580 rows but
 take the guide to **216 MB raw**, which is the size that chokes TiviMate. Add

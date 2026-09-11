@@ -10,12 +10,14 @@
 import { writeFileSync } from "node:fs";
 import { gunzipSync, gzipSync } from "node:zlib";
 
+import * as cache from "./cache.mjs";
 import {
   CHANNEL,
   DISPLAY_NAME,
   PROGRAMME,
   attr,
   escapeAttr,
+  hours,
   isPlaceholder,
   mb,
   xmltvChannel,
@@ -67,6 +69,8 @@ const SOURCES = [
 ];
 
 const OUT = "guide.xml.gz";
+// How the builder hands the gate what it cannot see in the guide itself: what
+// each source matched, and which of them were served from a cached copy.
 const COUNTS = "counts.json";
 
 // The escape hatch, and deliberately a short one: provider ids mapped to extra
@@ -420,6 +424,7 @@ const allChannels = [];
 const allProgrammes = [];
 const programmesByChannel = new Map();
 const counts = {};
+const stale = {}; // label -> age in days of the cached copy standing in for it
 const seen = new Set();
 
 // One merge for every producer, sources and events alike: first to claim an id
@@ -443,13 +448,32 @@ const merge = (label, { channels: produced, programmes }) => {
   console.log(`${label}: matched ${emitted.size} channels`);
 };
 
+// A source that fails is served from its last good output rather than dropped:
+// a guide fetched yesterday still covers the days ahead, and one bad fetch
+// should not empty a grid that was fine an hour ago. cache.mjs explains the
+// bounds. The failure is still reported, and still recorded as such in
+// counts.json, so the gate and the log show it instead of it passing silently.
 for (const source of SOURCES) {
+  const { label } = source;
+  let produced;
+
   try {
-    merge(source.label, convert(await fetchSource(source), index, source));
+    produced = convert(await fetchSource(source), index, source);
+    cache.save(label, produced);
   } catch (err) {
-    counts[source.label] = 0;
-    console.error(`${source.label}: skipped (${err.message})`);
+    produced = cache.load(label);
+    if (!produced) {
+      counts[label] = 0;
+      console.error(`${label}: failed (${err.message}), and no usable cached copy — no guide this run`);
+      continue;
+    }
+    stale[label] = produced.ageDays;
+    console.error(
+      `${label}: failed (${err.message}), serving a cached copy ${hours(produced.ageDays)} old`
+    );
   }
+
+  merge(label, produced);
 }
 
 // Pass 5, and the one producer that does not go through convert(): its
@@ -473,7 +497,7 @@ const xml =
 
 const raw = Buffer.from(xml, "utf8");
 writeFileSync(OUT, gzipSync(raw, { level: 9 }));
-writeFileSync(COUNTS, `${JSON.stringify(counts, null, 2)}\n`);
+writeFileSync(COUNTS, `${JSON.stringify({ sources: counts, stale }, null, 2)}\n`);
 
 console.log(
   `\n${OUT}: ${seen.size} channels, ${allProgrammes.length} programmes, ${mb(raw.length)} raw`
