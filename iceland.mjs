@@ -29,6 +29,58 @@ const BUDGET_MS = 240_000;
 
 const SYN_API = "https://www.syn.is/api/epg";
 
+// One station's events turned into a channel and its programmes, or null if the
+// station should be skipped. Separated from the fetching so the arithmetic can
+// be tested: syn.is gives a start and no end, so every stop here is worked out
+// rather than read, and getting that wrong shifts a whole Icelandic channel
+// without failing anything.
+export const synStation = (station, events) => {
+  const usable = events.filter((event) => event?.upphaf && (event.isltitill || event.titill));
+  if (!usable.length) return null; // carried, but nothing scheduled right now
+
+  // "beint" ("live") is not a channel: it is every channel's live events
+  // pooled together, 99 of them across 11 different `midill` values. Treated
+  // as one channel it takes another channel's name, claims that provider row,
+  // and closes each event with the start of a fixture on a different channel.
+  if (new Set(usable.map((event) => event.midill)).size > 1) return null;
+
+  // Sorted so the next programme's start can close the previous one, and
+  // deduplicated because the feed occasionally lists two at the same minute —
+  // which would otherwise produce a zero-length entry and an overlap.
+  const ordered = [...usable]
+    .sort((one, two) => one.upphaf.localeCompare(two.upphaf))
+    .filter((event, at, sorted) => at === 0 || event.upphaf !== sorted[at - 1].upphaf);
+
+  // Match on "<station>.is" and on both names it goes by: the id reaches
+  // "Synsport 5.is", and the station code reaches rows like "IS: SYN+ HD"
+  // that carry no id and whose accent-free name only the code matches.
+  const id = `${station}.is`;
+  const programmes = [];
+
+  for (const [at, event] of ordered.entries()) {
+    const start = new Date(event.upphaf);
+    if (Number.isNaN(start.getTime())) continue;
+    // The next programme closes this one, but only if it starts within the
+    // assumed length — a gap in the schedule must not stretch a programme
+    // across it.
+    const next = ordered[at + 1] ? new Date(ordered[at + 1].upphaf) : null;
+    const capped = new Date(start.getTime() + ASSUMED_HOURS * HOUR_MS);
+    programmes.push(
+      xmltvProgramme({
+        channel: id,
+        start,
+        stop: next && next > start && next < capped ? next : capped,
+        title: event.isltitill || event.titill,
+        desc: event.lysing,
+        categories: String(event.flokkur ?? "").split(","),
+        lang: "is",
+      })
+    );
+  }
+
+  return { channel: xmltvChannel(id, [ordered[0].midill_heiti, station]), programmes };
+};
+
 export const synGuide = async () => {
   const stations = await getJson(SYN_API, REQUEST);
   if (!Array.isArray(stations)) throw new Error("station list was not an array");
@@ -46,47 +98,14 @@ export const synGuide = async () => {
     let events;
     try {
       events = await getJson(`${SYN_API}/${station}`, REQUEST);
-      events = events.filter((event) => event?.upphaf && (event.isltitill || event.titill));
+      if (!Array.isArray(events)) continue;
     } catch {
       continue; // one station being down is not the whole source failing
     }
-    if (!events.length) continue; // carried, but nothing scheduled right now
-
-    // "beint" ("live") is not a channel: it is every channel's live events
-    // pooled together, 99 of them across 11 different `midill` values. Treated
-    // as one channel it takes another channel's name, claims that provider row,
-    // and closes each event with the start of a fixture on a different channel.
-    if (new Set(events.map((event) => event.midill)).size > 1) continue;
-
-    // Sorted so the next programme's start can close the previous one, and
-    // deduplicated because the feed occasionally lists two at the same minute —
-    // which would otherwise produce a zero-length entry and an overlap.
-    events.sort((a, b) => a.upphaf.localeCompare(b.upphaf));
-    events = events.filter((event, at) => at === 0 || event.upphaf !== events[at - 1].upphaf);
-
-    // Match on "<station>.is" and on both names it goes by: the id reaches
-    // "Synsport 5.is", and the station code reaches rows like "IS: SYN+ HD"
-    // that carry no id and whose accent-free name only the code matches.
-    const id = `${station}.is`;
-    channels.push(xmltvChannel(id, [events[0].midill_heiti, station]));
-
-    for (const [at, event] of events.entries()) {
-      const start = new Date(event.upphaf);
-      if (Number.isNaN(start.getTime())) continue;
-      const next = events[at + 1] ? new Date(events[at + 1].upphaf) : null;
-      const capped = new Date(start.getTime() + ASSUMED_HOURS * HOUR_MS);
-      programmes.push(
-        xmltvProgramme({
-          channel: id,
-          start,
-          stop: next && next > start && next < capped ? next : capped,
-          title: event.isltitill || event.titill,
-          desc: event.lysing,
-          categories: String(event.flokkur ?? "").split(","),
-          lang: "is",
-        })
-      );
-    }
+    const produced = synStation(station, events);
+    if (!produced) continue;
+    channels.push(produced.channel);
+    programmes.push(...produced.programmes);
   }
   return `<tv>\n${channels.join("\n")}\n${programmes.join("\n")}\n</tv>\n`;
 };
@@ -118,6 +137,37 @@ export const withoutStrands = (events) =>
       return !next || !(next.start < event.stop && next.stop <= event.stop);
     });
 
+// One RÚV event as a span, or null if it is not one. Separated from the
+// fetching because every part of it is a way to get a date wrong: the API gives
+// a full start stamp but only a wall-clock end, and that end belongs to the day
+// the programme STARTS — a day's response also carries that night's
+// post-midnight tail, so dating the end from the requested date puts those
+// programmes a day out.
+export const ruvSpan = (event) => {
+  const title = event?.title || event?.original_title;
+  if (!title || !event.start_time || !event.end_time_friendly) return null;
+
+  // No offset on either, because Iceland keeps UTC all year.
+  const start = new Date(`${event.start_time}Z`);
+  const stop = new Date(`${event.start_time.slice(0, 10)}T${event.end_time_friendly}:00Z`);
+  if (stop < start) stop.setUTCDate(stop.getUTCDate() + 1); // runs past midnight
+
+  // Comparisons against an invalid date are all false, so it has to be tested
+  // for directly or it reaches the formatter and throws.
+  if (Number.isNaN(start.getTime()) || Number.isNaN(stop.getTime())) return null;
+  // "Dagskrárlok" — end of broadcasting — is a zero-length marker, not a
+  // programme, and an empty span is invalid XMLTV.
+  if (stop <= start) return null;
+
+  return { start, stop, title, desc: event.description };
+};
+
+// A channel's spans as XMLTV, with the strands filtered out. A thin wrapper,
+// but it is the wrapper that applies withoutStrands — and a test that only
+// covers the filter cannot tell whether anything calls it.
+export const ruvProgrammes = (channel, spans) =>
+  withoutStrands(spans).map((span) => xmltvProgramme({ channel, ...span, lang: "is" }));
+
 export const ruvGuide = async () => {
   const channels = [];
   const programmes = [];
@@ -148,31 +198,15 @@ export const ruvGuide = async () => {
       }
 
       for (const event of events ?? []) {
-        const title = event?.title || event?.original_title;
-        if (!title || !event.start_time || !event.end_time_friendly) continue;
-        if (seenStart.has(event.start_time)) continue; // belt and braces across day requests
+        if (event?.start_time && seenStart.has(event.start_time)) continue; // across day requests
+        const span = ruvSpan(event);
+        if (!span) continue;
         seenStart.add(event.start_time);
-
-        // start_time carries no offset because Iceland has none. end_time is
-        // wall clock only, and belongs to the day the programme *starts* — a
-        // day's response also carries that night's post-midnight tail, so the
-        // requested date is the wrong one to date it from.
-        const start = new Date(`${event.start_time}Z`);
-        const stop = new Date(`${event.start_time.slice(0, 10)}T${event.end_time_friendly}:00Z`);
-        if (stop < start) stop.setUTCDate(stop.getUTCDate() + 1); // runs past midnight
-        // Comparisons against an invalid date are all false, so it has to be
-        // tested for directly or it reaches the formatter and throws.
-        if (Number.isNaN(start.getTime()) || Number.isNaN(stop.getTime())) continue;
-        // "Dagskrárlok" — end of broadcasting — is a zero-length marker, not a
-        // programme, and an empty span is invalid XMLTV.
-        if (stop <= start) continue;
-
-        spans.push({ start, stop, title, desc: event.description });
+        spans.push(span);
       }
     }
 
-    for (const span of withoutStrands(spans))
-      programmes.push(xmltvProgramme({ channel: id, ...span, lang: "is" }));
+    programmes.push(...ruvProgrammes(id, spans));
   }
   return `<tv>\n${channels.join("\n")}\n${programmes.join("\n")}\n</tv>\n`;
 };
