@@ -135,6 +135,12 @@ carrier: `AandE Network (East).us` names the channel that `US: A&E HD` is.
 This pass is what makes everything outside the UK work at all. Without it, US,
 Denmark, Norway and Sweden matched zero channels between them.
 
+A source whose ids carry no country at all declares one with `cc`. epg.pw
+numbers its channels — `9121` — so `ccOf` finds nothing, this pass is skipped
+for every channel in the file, and the whole source matches nothing: 756 UK
+channels, none of them reachable. `cc` applies only where the id is silent, so
+it can never override a country an id does state.
+
 A source may also declare `borrow: "<country>"` to serve one other country's
 entries. Only the Nordic sources do, for Iceland: my provider's Icelandic
 entries for international channels carry the Nordic feed, and only DK/NO/SE
