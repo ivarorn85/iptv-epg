@@ -171,7 +171,11 @@ const firstHit = (labels, lookup) => {
   return undefined;
 };
 
-export const convert = (xml, index, { passthrough, borrow } = {}) => {
+// `cc` is the country a source declares for itself, for the files whose channel
+// ids carry none — epg.pw numbers its channels "9121". Without it ccOf() finds
+// nothing, so pass 3 is skipped for every channel in the file and the whole
+// source matches nothing at all: 756 UK channels, none of them reachable.
+export const convert = (xml, index, { passthrough, borrow, cc: declared } = {}) => {
   const { byId, byName, byBase, byScoped, byScopedBase, aliases, targetCc, inherited } = index;
   const withData = channelsWithData(xml);
 
@@ -238,7 +242,7 @@ export const convert = (xml, index, { passthrough, borrow } = {}) => {
   // is part of the key, so this cannot match across countries — except the one
   // a source explicitly declares it may `borrow`.
   for (const { sourceId, labels } of elements) {
-    for (const cc of [ccOf(sourceId), borrow]) {
+    for (const cc of [ccOf(sourceId) || declared, borrow]) {
       if (!cc) continue;
       take(
         sourceId,
@@ -269,7 +273,7 @@ export const convert = (xml, index, { passthrough, borrow } = {}) => {
   // wants this channel, or the source is passthrough and keeps everything.
   for (const { sourceId, labels } of elements) {
     if (resolved.has(sourceId)) continue;
-    const wanted = [ccOf(sourceId), borrow].some((cc) => aliasNames(labels, cc).size);
+    const wanted = [ccOf(sourceId) || declared, borrow].some((cc) => aliasNames(labels, cc).size);
     if (wanted || passthrough) resolved.set(sourceId, new Set([sourceId]));
   }
 

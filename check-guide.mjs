@@ -18,7 +18,6 @@ import { gunzipSync } from "node:zlib";
 
 import {
   CHANNEL,
-  DISPLAY_NAME,
   HOUR_MS,
   PROGRAMME,
   attr,
@@ -99,14 +98,9 @@ const xml = gunzipSync(bytes).toString("utf8");
 // free to write <channel lang="en" id="X">, and counting every programme on
 // that channel as orphaned would refuse the publish over attribute order.
 //
-// The same worry one level down: a display-name on two channel ids is a name a
-// player also picks between. Counted rather than failed, because most of them
-// are two ids for one real channel — see the README — and recorded in
-// status.json, which is committed, so growth shows up as a diff.
 //
 // One walk of the whole string for both, since it can be 62 MB.
 const declared = new Set();
-const namedBy = new Map();
 let channels = 0;
 let unidentified = 0;
 for (const [element] of xml.matchAll(CHANNEL)) {
@@ -119,10 +113,7 @@ for (const [element] of xml.matchAll(CHANNEL)) {
     continue;
   }
   declared.add(id);
-  for (const [, name] of element.matchAll(DISPLAY_NAME))
-    namedBy.set(name.trim(), (namedBy.get(name.trim()) ?? new Set()).add(id));
 }
-const sharedNames = [...namedBy.values()].filter((ids) => ids.size > 1).length;
 
 // Counted without materialising anything: the guide has hundreds of thousands
 // of programmes, and Math.max(...stops) would overflow the call stack.
@@ -159,7 +150,6 @@ console.log(
   `programmes: ${programmes} (floor ${MIN_PROGRAMMES}), ${invalid} invalid,` +
     ` ${orphaned} orphaned, ${repeated} repeated`
 );
-console.log(`names on more than one channel: ${sharedNames}`);
 console.log(
   Number.isFinite(latest)
     ? `schedule runs to ${new Date(latest).toISOString()}, ${hoursAhead.toFixed(1)}h ahead (floor ${MIN_HOURS_AHEAD}h)`
@@ -195,6 +185,15 @@ const handoff = readJson(COUNTS) ?? {};
 const counts = handoff.sources ?? {};
 const stale = handoff.stale ?? {};
 const collapsed = handoff.collapsed ?? {};
+const ambiguous = handoff.ambiguous ?? [];
+
+// Rows the builder found could resolve to the wrong channel — counted there
+// because it needs the playlist, which the gate never sees. Recorded in
+// status.json, which is committed, so growth shows up as a diff.
+console.log(
+  `rows a name could misdirect: ${ambiguous.length}` +
+    (ambiguous.length ? ` — ${ambiguous.slice(0, 4).join(", ")}${ambiguous.length > 4 ? ", ..." : ""}` : "")
+);
 const previous = readJson(STATUS)?.sources ?? {};
 const regressions = [];
 for (const [label, before] of Object.entries(previous)) {
@@ -254,7 +253,7 @@ writeFileSync(
       gzipBytes: bytes.length,
       sources: counts,
       stale,
-      sharedNames,
+      ambiguous,
       regressions,
       zeroed,
       collapsed,

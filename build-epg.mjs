@@ -16,7 +16,7 @@ import { writeFileSync } from "node:fs";
 import { gunzipSync, gzipSync } from "node:zlib";
 
 import * as cache from "./cache.mjs";
-import { hours, mb, slotKey } from "./epg-xml.mjs";
+import { DISPLAY_NAME, attr, hours, mb, slotKey } from "./epg-xml.mjs";
 import { eventGuide } from "./events.mjs";
 import { getJson, request } from "./http.mjs";
 import { ruvGuide, synGuide } from "./iceland.mjs";
@@ -60,6 +60,18 @@ const SOURCES = [
   // late because it only fills leftovers, and it will start being skipped once
   // it outgrows that ceiling — see the size check in fetchSource.
   { label: "US extra", url: `${IPTVEPG}us.xml.gz` },
+  // Added after iptv-epg.org went down for a day and a half and took 135
+  // channels with it. Gap-fillers, not replacements: they sit after the sources
+  // above and take only what is still unclaimed, which is 45 UK and 33 US
+  // channels. epg.pw's US file does run 7.5 days ahead against US2's 3.1, so
+  // promoting it is worth revisiting if depth ever matters more than keeping a
+  // settled source settled.
+  //
+  // epg.pw numbers its channels ("9121") rather than suffixing a country, hence
+  // `cc`: without it pass 3 cannot scope them and the entire file matches
+  // nothing — 756 UK channels, all unreachable.
+  { label: "UK extra 2", url: "https://epg.pw/xmltv/epg_GB.xml.gz", cc: "uk" },
+  { label: "US extra 2", url: "https://epg.pw/xmltv/epg_US.xml.gz", cc: "us" },
   // My provider's remaining Icelandic entries are international channels on the
   // Nordic feed, which only these carry — hence `borrow: "is"`. Never UK or US:
   // those are a different regional schedule, and wrong programmes are worse
@@ -92,6 +104,14 @@ const FETCH_BUDGET_MS = 11 * 60_000;
 const SOURCE_TIMEOUT_MS = 180_000;
 let fetchDeadline = Infinity;
 
+const unzipped = (buf) => {
+  try {
+    return gunzipSync(buf);
+  } catch {
+    return buf; // not gzip, whatever the URL says
+  }
+};
+
 const fetchSource = async ({ url, build }) => {
   // Checked before the build() branch, not after: those producers make twenty
   // or thirty requests of their own, and syn.is is the one host here known to
@@ -106,7 +126,10 @@ const fetchSource = async ({ url, build }) => {
   // the budget has left, so the last source cannot overrun the job on its own.
   const res = await request(url, { timeoutMs: Math.min(SOURCE_TIMEOUT_MS, left), attempts: 2 });
   const buf = Buffer.from(await res.arrayBuffer());
-  const raw = url.endsWith(".gz") ? gunzipSync(buf) : buf;
+  // Tried rather than assumed from the name: epg.lat serves its ".gz" with a
+  // Content-Encoding header, so fetch has already decompressed it by the time
+  // it gets here, and insisting on gunzip threw away the whole file.
+  const raw = unzipped(buf);
   if (raw.length > MAX_STRING) throw new Error(`${mb(raw.length, 0)} uncompressed, too big to parse`);
   return raw.toString("utf8");
 };
@@ -263,6 +286,25 @@ try {
   console.error(`Timeshift: skipped (${err.message})`);
 }
 
+// Rows a player could resolve to the wrong channel: a display-name carried by
+// more than one emitted channel, which a row with no id in the guide — and so
+// nothing but the name to go on — actually uses.
+//
+// Counted here rather than in the gate because it needs the playlist, and the
+// gate only sees the guide. The gate used to count ambiguous names instead,
+// which sounds like the same thing and is not: adding two sources took that
+// from 37 to 89 while this stayed at 6, because almost every ambiguous name is
+// one no row is called. Six is a number worth reading; 89 was noise.
+const namedBy = new Map();
+for (const element of allChannels) {
+  const id = attr(element, "id");
+  for (const [, name] of element.matchAll(DISPLAY_NAME))
+    namedBy.set(name.trim(), (namedBy.get(name.trim()) ?? new Set()).add(id));
+}
+const ambiguous = channels
+  .filter((ch) => ch.name && !seen.has(ch.epg_channel_id) && (namedBy.get(ch.name)?.size ?? 0) > 1)
+  .map((ch) => ch.name);
+
 const xml =
   '<?xml version="1.0" encoding="UTF-8"?>\n' +
   '<tv generator-info-name="build-epg">\n' +
@@ -270,7 +312,7 @@ const xml =
 
 const raw = Buffer.from(xml, "utf8");
 writeFileSync(OUT, gzipSync(raw, { level: 9 }));
-writeFileSync(COUNTS, `${JSON.stringify({ sources: counts, stale, collapsed }, null, 2)}\n`);
+writeFileSync(COUNTS, `${JSON.stringify({ sources: counts, stale, collapsed, ambiguous }, null, 2)}\n`);
 
 console.log(
   `\n${OUT}: ${seen.size} channels, ${allProgrammes.length} programmes, ${mb(raw.length)} raw`
